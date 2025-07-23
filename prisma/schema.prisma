@@ -1,0 +1,440 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    Int       @id @default(autoincrement())
+  username              String    @unique @db.VarChar(64)
+  displayName           String    @map("display_name") @db.VarChar(64)
+  email                 String    @unique @db.VarChar(255)
+  passwordHash          String?   @map("password_hash") @db.VarChar(255)
+  role                  Role
+  authProvider          AuthProvider @default(PASSWORD) @map("auth_provider")
+  googleId              String?   @unique @map("google_id") @db.VarChar(100)
+  department            String?   @db.VarChar(100)
+  bio                   String?   @db.Text
+  profileImageUrl       String?   @map("profile_image_url") @default("/images/default-avatar.png") @db.VarChar(1500)
+  isActive              Boolean   @default(true) @map("is_active")
+  failedLoginCount      Int       @default(0) @map("failed_login_count")
+  lastFailedLoginAt     DateTime? @map("last_failed_login_at") @db.Timestamptz
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  lastLoginAt           DateTime? @map("last_login_at") @db.Timestamptz
+
+  // Relations
+  videos                Video[]
+  posts                 Post[]
+  playlists             Playlist[]
+  favorites             Favorite[]
+  viewHistory           ViewHistory[]
+  notifications         Notification[]
+
+  @@index([username])
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@index([googleId])
+  @@index([authProvider])
+  @@map("users")
+}
+
+model Video {
+  id                    Int       @id @default(autoincrement())
+  videoId               String    @unique @map("video_id") @db.VarChar(11)
+  title                 String    @db.VarChar(200)
+  description           String?   @db.Text
+  uploadType            UploadType @map("upload_type")
+  
+  // File upload fields
+  originalFilename      String?   @map("original_filename") @db.VarChar(255)
+  filePath              String?   @map("file_path") @db.VarChar(500)
+  convertedFilePath     String?   @map("converted_file_path") @db.VarChar(500)
+  fileSize              BigInt?   @map("file_size")
+  mimeType              String?   @map("mime_type") @db.VarChar(100)
+  
+  // YouTube fields
+  youtubeUrl            String?   @map("youtube_url") @db.VarChar(500)
+  youtubeVideoId        String?   @map("youtube_video_id") @db.VarChar(15)
+  youtubeViewCount      Int?      @map("youtube_view_count")
+  
+  // Common metadata
+  thumbnailUrl          String?   @map("thumbnail_url") @db.VarChar(500)
+  duration              Int?      // seconds
+  viewCount             Int       @default(0) @map("view_count")
+  
+  // 検索用メタデータ（変換後の情報）
+  videoResolution       String?   @map("video_resolution") @db.VarChar(20) // "1920x1080"
+  videoCodec            String?   @map("video_codec") @db.VarChar(20) // "av1", "h264"
+  videoBitrate          Int?      @map("video_bitrate") // kbps
+  videoFrameRate        Decimal?  @map("video_frame_rate") @db.Decimal(5, 2) // fps
+  audioCodec            String?   @map("audio_codec") @db.VarChar(20) // "aac", "mp3"
+  audioBitrate          Int?      @map("audio_bitrate") // kbps
+  audioSampleRate       Int?      @map("audio_sample_rate") // Hz
+  audioChannels         Int?      @map("audio_channels") // 1, 2, 5.1
+  convertedFileSize     BigInt?   @map("converted_file_size") // 変換後のファイルサイズ
+  compressionRatio      Decimal?  @map("compression_ratio") @db.Decimal(5, 2) // 圧縮率（%）
+  
+  // Visibility and status
+  visibility            Visibility
+  status                VideoStatus @default(PROCESSING)
+  
+  // Scheduling
+  isScheduled           Boolean   @default(false) @map("is_scheduled")
+  scheduledPublishAt    DateTime? @map("scheduled_publish_at") @db.Timestamptz
+  scheduledUnpublishAt  DateTime? @map("scheduled_unpublish_at") @db.Timestamptz
+  
+  // Relations
+  uploaderId            Int       @map("uploader_id")
+  uploader              User      @relation(fields: [uploaderId], references: [id])
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  publishedAt           DateTime? @map("published_at") @db.Timestamptz
+
+  // Relations
+  posts                 Post[]
+  categories            VideoCategory[]
+  tags                  VideoTag[]
+  viewLogs              ViewLog[]
+  playlistVideos        PlaylistVideo[]
+  transcodeJobs         TranscodeJob[]
+  favorites             Favorite[]
+  viewHistory           ViewHistory[]
+
+  @@index([videoId])
+  @@index([uploaderId])
+  @@index([visibility])
+  @@index([status])
+  @@index([uploadType])
+  @@index([createdAt])
+  @@index([publishedAt])
+  @@index([duration]) // 検索用インデックス
+  @@index([videoCodec]) // 検索用インデックス
+  @@index([videoResolution]) // 検索用インデックス
+  @@index([viewCount]) // 人気順ソート用
+  @@index([visibility, createdAt]) // 公開動画の最新順
+  @@index([visibility, viewCount]) // 公開動画の人気順
+  @@index([uploaderId, createdAt]) // ユーザーの動画一覧
+  @@index([isScheduled, scheduledPublishAt]) // 予約投稿用インデックス
+  @@index([scheduledUnpublishAt]) // 予約非公開用インデックス
+  @@map("videos")
+}
+
+model Post {
+  id                    Int       @id @default(autoincrement())
+  postId                String    @unique @map("post_id") @db.VarChar(11)
+  title                 String    @db.VarChar(200)
+  description           String?   @db.Text
+  postType              PostType  @map("post_type")
+  
+  // Relations
+  videoId               Int?      @map("video_id")
+  video                 Video?    @relation(fields: [videoId], references: [id])
+  playlistId            Int?      @map("playlist_id")
+  playlist              Playlist? @relation(fields: [playlistId], references: [id])
+  
+  visibility            Visibility
+  creatorId             Int       @map("creator_id")
+  creator               User      @relation(fields: [creatorId], references: [id])
+  
+  // Scheduling
+  isScheduled           Boolean   @default(false) @map("is_scheduled")
+  scheduledPublishAt    DateTime? @map("scheduled_publish_at") @db.Timestamptz
+  scheduledUnpublishAt  DateTime? @map("scheduled_unpublish_at") @db.Timestamptz
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  publishedAt           DateTime? @map("published_at") @db.Timestamptz
+
+  @@index([postId])
+  @@index([creatorId])
+  @@index([postType])
+  @@index([visibility])
+  @@index([publishedAt])
+  @@index([isScheduled, scheduledPublishAt]) // 予約投稿用インデックス
+  @@index([scheduledUnpublishAt]) // 予約非公開用インデックス
+  @@map("posts")
+}
+
+model Playlist {
+  id                    Int       @id @default(autoincrement())
+  playlistId            String    @unique @map("playlist_id") @db.VarChar(11)
+  title                 String    @db.VarChar(200)
+  description           String?   @db.Text
+  thumbnailUrl          String?   @map("thumbnail_url") @db.VarChar(500)
+  videoCount            Int       @default(0) @map("video_count")
+  totalDuration         Int?      @default(0) @map("total_duration") // seconds
+  
+  // Relations
+  creatorId             Int       @map("creator_id")
+  creator               User      @relation(fields: [creatorId], references: [id])
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  posts                 Post[]
+  videos                PlaylistVideo[]
+
+  @@index([playlistId])
+  @@index([creatorId])
+  @@map("playlists")
+}
+
+model PlaylistVideo {
+  id                    Int       @id @default(autoincrement())
+  playlistId            Int       @map("playlist_id")
+  playlist              Playlist  @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  sortOrder             Int       @map("sort_order")
+  addedAt               DateTime  @default(now()) @map("added_at") @db.Timestamptz
+
+  @@unique([playlistId, videoId])
+  @@index([playlistId])
+  @@index([videoId])
+  @@index([playlistId, sortOrder])
+  @@map("playlist_videos")
+}
+
+model Category {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique @db.VarChar(32)
+  slug                  String    @unique @db.VarChar(100)
+  description           String?   @db.Text
+  color                 String?   @db.VarChar(7) // HEX color code
+  videoCount            Int       @default(0) @map("video_count")
+  sortOrder             Int       @default(0) @map("sort_order")
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  videos                VideoCategory[]
+
+  @@index([slug])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model VideoCategory {
+  id                    Int       @id @default(autoincrement())
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  categoryId            Int       @map("category_id")
+  category              Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, categoryId])
+  @@index([videoId])
+  @@index([categoryId])
+  @@map("video_categories")
+}
+
+model Tag {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique @db.VarChar(32)
+  videoCount            Int       @default(0) @map("video_count")
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  videos                VideoTag[]
+
+  @@index([name])
+  @@index([videoCount])
+  @@map("tags")
+}
+
+model VideoTag {
+  id                    Int       @id @default(autoincrement())
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  tagId                 Int       @map("tag_id")
+  tag                   Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, tagId])
+  @@index([videoId])
+  @@index([tagId])
+  @@map("video_tags")
+}
+
+model ViewLog {
+  id                    Int       @id @default(autoincrement())
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  sessionId             String?   @map("session_id") @db.VarChar(64)
+  userAgent             String?   @map("user_agent") @db.Text
+  watchDuration         Int?      @map("watch_duration") // seconds
+  completionRate        Decimal?  @map("completion_rate") @db.Decimal(5, 2)
+  referrer              String?   @db.VarChar(500)
+  viewedAt              DateTime  @default(now()) @map("viewed_at") @db.Timestamptz
+
+  @@index([videoId])
+  @@index([sessionId])
+  @@index([viewedAt])
+  @@map("view_logs")
+}
+
+// 一般ユーザー用テーブル
+
+model Favorite {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([userId, videoId])
+  @@index([userId])
+  @@index([videoId])
+  @@index([createdAt])
+  @@map("favorites")
+}
+
+model ViewHistory {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  watchDuration         Int?      @map("watch_duration") // seconds
+  completionRate        Decimal?  @map("completion_rate") @db.Decimal(5, 2)
+  lastWatchedAt         DateTime  @default(now()) @map("last_watched_at") @db.Timestamptz
+
+  @@unique([userId, videoId])
+  @@index([userId])
+  @@index([videoId])
+  @@index([lastWatchedAt])
+  @@map("view_history")
+}
+
+model SystemSetting {
+  id                    Int       @id @default(autoincrement())
+  settingKey            String    @unique @map("setting_key") @db.VarChar(100)
+  settingValue          String?   @map("setting_value") @db.Text
+  settingType           SettingType @map("setting_type")
+  description           String?   @db.Text
+  isActive              Boolean   @default(true) @map("is_active")
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([settingKey])
+  @@index([isActive])
+  @@map("system_settings")
+}
+
+model TranscodeJob {
+  id                    Int       @id @default(autoincrement())
+  jobId                 String    @unique @map("job_id") @db.VarChar(50)
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  // 基本情報のみ
+  inputFile             String    @map("input_file") @db.VarChar(500)
+  outputFile            String?   @map("output_file") @db.VarChar(500)
+  preset                String    @db.VarChar(50)
+  status                TranscodeStatus @default(PENDING)
+  
+  // 進捗とエラー
+  progress              Int       @default(0) // 0-100
+  errorMessage          String?   @map("error_message") @db.Text
+  estimatedTimeRemaining Int?     @map("estimated_time_remaining") // 推定残り時間（秒）
+  
+  // タイムスタンプ
+  startedAt             DateTime? @map("started_at") @db.Timestamptz
+  completedAt           DateTime? @map("completed_at") @db.Timestamptz
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([jobId])
+  @@index([videoId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("transcode_jobs")
+}
+
+// Enums
+enum Role {
+  ADMIN @map("admin")
+  CURATOR @map("curator")
+  VIEWER @map("viewer")
+}
+
+enum AuthProvider {
+  PASSWORD @map("password")
+  GOOGLE @map("google")
+}
+
+enum UploadType {
+  FILE @map("file")
+  YOUTUBE @map("youtube")
+}
+
+enum Visibility {
+  PUBLIC  @map("public")
+  PRIVATE @map("private")
+  DRAFT   @map("draft")
+}
+
+enum VideoStatus {
+  PROCESSING @map("processing")
+  COMPLETED @map("completed")
+  FAILED @map("failed")
+  DELETED @map("deleted")
+}
+
+enum PostType {
+  VIDEO @map("video")
+  PLAYLIST @map("playlist")
+}
+
+enum SettingType {
+  STRING @map("string")
+  INTEGER @map("integer")
+  BOOLEAN @map("boolean")
+  JSON @map("json")
+  TEXT @map("text")
+  SERVER_IP @map("server_ip")
+  FILE_PATH @map("file_path")
+  PORT @map("port")
+}
+
+enum TranscodeStatus {
+  PENDING @map("pending")
+  PROCESSING @map("processing")
+  COMPLETED @map("completed")
+  FAILED @map("failed")
+  CANCELLED @map("cancelled")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  type        String   @db.VarChar(50)
+  title       String   @db.VarChar(200)
+  message     String   @db.Text
+  userId      Int      @map("user_id")
+  metadata    String?  @db.Text
+  isRead      Boolean  @default(false) @map("is_read")
+  readAt      DateTime? @map("read_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+} 
