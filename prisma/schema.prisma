@@ -276,11 +276,13 @@ model ViewLog {
   watchDuration         Int?      @map("watch_duration") // seconds
   completionRate        Decimal?  @map("completion_rate") @db.Decimal(5, 2)
   referrer              String?   @db.VarChar(500)
+  viewCountUpdated      Boolean   @default(false) @map("view_count_updated") // 視聴回数更新済みフラグ
   viewedAt              DateTime  @default(now()) @map("viewed_at") @db.Timestamptz
 
   @@index([videoId])
   @@index([sessionId])
   @@index([viewedAt])
+  @@index([videoId, sessionId, viewCountUpdated]) // 重複チェック用インデックス
   @@map("view_logs")
 }
 

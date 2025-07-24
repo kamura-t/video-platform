@@ -519,10 +519,10 @@ export function VideoWatchPage({ post }: VideoWatchPageProps) {
                         key={categoryItem.category.id} 
                         variant="secondary"
                         style={{ backgroundColor: categoryItem.category.color + '20', color: categoryItem.category.color }}
-                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                        className="cursor-pointer transition-all duration-300 ease-in-out transform hover:scale-110 hover:shadow-lg hover:shadow-current/25 hover:-translate-y-1 hover:brightness-110 active:scale-105"
                         onClick={() => router.push(`/?category=${categoryItem.category.slug}`)}
                       >
-                        <span>{categoryItem.category.name}</span>
+                        <span className="relative z-10">{categoryItem.category.name}</span>
                       </Badge>
                     ))}
                   </>
@@ -533,10 +533,10 @@ export function VideoWatchPage({ post }: VideoWatchPageProps) {
                       <Badge 
                         key={tagItem.tag.id} 
                         variant="outline"
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        className="cursor-pointer transition-all duration-300 ease-in-out transform hover:scale-110 hover:shadow-md hover:shadow-primary/20 hover:-translate-y-1 hover:bg-primary/10 hover:border-primary hover:text-primary active:scale-105"
                         onClick={() => router.push(`/?tag=${tagItem.tag.name}`)}
                       >
-                        <span>#{tagItem.tag.name}</span>
+                        <span className="relative z-10">#{tagItem.tag.name}</span>
                       </Badge>
                     ))}
                   </>

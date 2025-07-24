@@ -34,9 +34,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
   
   // 視聴進捗トラッキング用の状態
   const [hasReported30Percent, setHasReported30Percent] = useState(false);
-  const [hasReported10Minutes, setHasReported10Minutes] = useState(false);
+  const [hasReportedMinutes, setHasReportedMinutes] = useState(false);
   const [watchStartTime, setWatchStartTime] = useState<number | null>(null);
   const [totalWatchTime, setTotalWatchTime] = useState(0);
+  const [viewThresholds, setViewThresholds] = useState({ percent: 30, seconds: 180 });
 
   // 動画のアスペクト比を計算
   const calculateAspectRatio = () => {
@@ -51,6 +52,24 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
 
   const aspectRatio = calculateAspectRatio();
   const isPortrait = aspectRatio < 1.0; // 縦型動画の判定
+
+  // 視聴回数の閾値設定を取得
+  useEffect(() => {
+    const fetchThresholds = async () => {
+      try {
+        const response = await fetch('/api/settings/view-thresholds')
+        const result = await response.json()
+        if (result.success) {
+          setViewThresholds(result.data)
+        }
+      } catch (error) {
+        console.warn('視聴回数閾値の取得に失敗:', error)
+        // デフォルト値を使用
+      }
+    }
+    
+    fetchThresholds()
+  }, [])
 
   // 縦型動画用のスタイルを生成
   const getVideoContainerStyle = () => {
@@ -209,16 +228,16 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
       currentWatchTime += (Date.now() - watchStartTime) / 1000;
     }
     
-    // 30%視聴または10分視聴の判定
-    const shouldReport30Percent = completionRate >= 30 && !hasReported30Percent;
-    const shouldReport10Minutes = currentWatchTime >= 600 && !hasReported10Minutes;
+    // システム設定に基づく閾値判定
+    const shouldReportPercent = completionRate >= viewThresholds.percent && !hasReported30Percent;
+    const shouldReportMinutes = currentWatchTime >= viewThresholds.seconds && !hasReportedMinutes;
     
-    if (shouldReport30Percent || shouldReport10Minutes) {
-      if (shouldReport30Percent) {
+    if (shouldReportPercent || shouldReportMinutes) {
+      if (shouldReportPercent) {
         setHasReported30Percent(true);
       }
-      if (shouldReport10Minutes) {
-        setHasReported10Minutes(true);
+      if (shouldReportMinutes) {
+        setHasReportedMinutes(true);
       }
       
       // 視聴進捗を報告

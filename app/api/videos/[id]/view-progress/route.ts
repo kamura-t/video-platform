@@ -98,6 +98,7 @@ export async function POST(
           watchDuration: watchDuration,
           completionRate: completionRate,
           referrer: headersList.get('referer') || null,
+          viewCountUpdated: false, // 初回は未更新
           viewedAt: new Date()
         }
       })
@@ -170,13 +171,22 @@ export async function POST(
     
     let viewCountUpdated = false
     
-    if (shouldUpdateViewCount && !currentViewLog.watchDuration) {
-      // 初回の閾値到達時のみview_countを更新
-      // （watchDurationがnullの場合は初回更新）
-      await prisma.video.update({
-        where: { id: video.id },
-        data: { viewCount: { increment: 1 } }
+    // 閾値に達している かつ まだ視聴回数を更新していない場合のみ更新
+    if (shouldUpdateViewCount && !currentViewLog.viewCountUpdated) {
+      await prisma.$transaction(async (tx) => {
+        // 視聴回数を更新
+        await tx.video.update({
+          where: { id: video.id },
+          data: { viewCount: { increment: 1 } }
+        })
+        
+        // ViewLogのフラグを更新
+        await tx.viewLog.update({
+          where: { id: currentViewLog.id },
+          data: { viewCountUpdated: true }
+        })
       })
+      
       viewCountUpdated = true
       
       console.log(`視聴回数を更新: videoId=${video.id}, sessionId=${sessionId}, completionRate=${completionRate}%, watchDuration=${watchDuration}秒, 閾値=${thresholdPercent}%/${thresholdSeconds}秒`)
