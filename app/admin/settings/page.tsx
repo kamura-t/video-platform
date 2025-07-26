@@ -182,33 +182,6 @@ export default function SystemSettingsPage() {
         }
       })
 
-      // JSON設定のバリデーション
-      const jsonSettings = ['private_video_allowed_ips']
-      jsonSettings.forEach(key => {
-        if (settings[key]?.value) {
-          try {
-            const parsed = JSON.parse(settings[key].value)
-            if (key === 'private_video_allowed_ips') {
-              if (!Array.isArray(parsed)) {
-                validationErrors.push('IPアドレス設定は配列形式で入力してください')
-              } else {
-                // IPアドレス/CIDR形式の簡易バリデーション
-                const invalidIps = parsed.filter((ip: any) => {
-                  if (typeof ip !== 'string') return true
-                  // 簡易的なIPアドレス/CIDR形式チェック
-                  const ipPattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
-                  return !ipPattern.test(ip)
-                })
-                if (invalidIps.length > 0) {
-                  validationErrors.push(`無効なIPアドレス形式が含まれています: ${invalidIps.join(', ')}`)
-                }
-              }
-            }
-          } catch {
-            validationErrors.push(`${key}は有効なJSON形式で入力してください`)
-          }
-        }
-      })
 
       if (validationErrors.length > 0) {
         setSaveError(validationErrors.join(', '))
@@ -857,24 +830,6 @@ export default function SystemSettingsPage() {
                       placeholder="1800"
                       className="mt-1"
                     />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="private_video_allowed_ips" className="text-sm font-medium">
-                      学内限定動画アクセス許可IPアドレス
-                    </Label>
-                    <Textarea
-                      id="private_video_allowed_ips"
-                      value={settings.private_video_allowed_ips?.value || '[]'}
-                      onChange={(e) => updateSetting('private_video_allowed_ips', e.target.value)}
-                      placeholder='["192.168.1.0/24", "10.0.0.0/8", "172.16.0.0/12"]'
-                      className="mt-1"
-                      rows={4}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      学内限定動画にアクセス可能なIPアドレスまたはCIDR範囲をJSON配列形式で入力してください。<br />
-                      例: [&quot;192.168.1.0/24&quot;, &quot;10.0.0.0/8&quot;, &quot;172.16.0.0/12&quot;, &quot;192.168.10.64&quot;]
-                    </p>
                   </div>
                 </div>
               </CardContent>

@@ -138,14 +138,12 @@ export async function DELETE(
       });
     });
 
-    // 削除ログを記録（ファイルアップロード方式の場合）
-    if (video.uploadType === 'FILE') {
-      try {
-        await logFileDeletion(video, deletedFiles, user.id);
-      } catch (logError) {
-        console.error('ログ記録エラー:', logError);
-        // ログ記録の失敗は処理を停止しない
-      }
+    // 削除ログを記録（全ての削除に対して）
+    try {
+      await logFileDeletion(video, deletedFiles, user.id);
+    } catch (logError) {
+      console.error('ログ記録エラー:', logError);
+      // ログ記録の失敗は処理を停止しない
     }
 
     return NextResponse.json({ 

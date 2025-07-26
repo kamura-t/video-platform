@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkInternalVideoAccess } from '@/lib/auth-access-control'
-import { getClientIP } from '@/lib/ip-access-control'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 
 export async function GET(

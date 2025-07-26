@@ -69,6 +69,8 @@ export async function logFileDeletion(
     title: videoData.title,
     originalFilePath: videoData.filePath,
     originalThumbnailPath: videoData.thumbnailUrl,
+    archivedFilePath: videoData.convertedFilePath || videoData.filePath || 'N/A',
+    archivedThumbnailPath: videoData.thumbnailUrl || 'N/A',
     convertedFilePath: videoData.convertedFilePath,
     deletedFiles,
     uploaderId: videoData.uploaderId,
@@ -80,10 +82,10 @@ export async function logFileDeletion(
 
   // ログファイルパス
   const today = new Date().toISOString().split('T')[0];
-  const logDir = path.join(process.cwd(), 'delete', 'logs');
+  const logDir = path.join(process.cwd(), 'storage', 'logs');
   await fs.mkdir(logDir, { recursive: true });
   
-  const logFilePath = path.join(logDir, `${today}.json`);
+  const logFilePath = path.join(logDir, `deleted_videos_${today}.json`);
 
   // 既存のログを読み込み
   let logs: any[] = [];

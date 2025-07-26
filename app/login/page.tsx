@@ -107,46 +107,6 @@ export default function LoginPage() {
     }
   }
 
-  const handleDemoLogin = async (role: 'admin' | 'curator' | 'viewer') => {
-    const credentials = {
-      admin: { username: 'admin', password: 'admin123456' },
-      curator: { username: 'curator', password: 'curator123456' },
-      viewer: { username: 'viewer', password: 'viewer123456' }
-    }
-    
-    const cred = credentials[role]
-    setUsername(cred.username)
-    setPassword(cred.password)
-    
-    // 自動ログイン
-    setError('')
-    setIsLoading(true)
-
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(cred),
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        await login({ email: cred.username, password: cred.password }, data.user)
-        // 権限に応じたリダイレクト先を設定
-        const redirectPath = data.redirectTo || (data.user?.role === 'VIEWER' ? '/account' : '/admin')
-        router.push(redirectPath)
-      } else {
-        setError(data.error || 'ログインに失敗しました')
-      }
-    } catch (err) {
-      setError('ネットワークエラーが発生しました')
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
@@ -262,55 +222,6 @@ export default function LoginPage() {
               */}
             </div>
 
-            {/* Demo Login Buttons */}
-            <div className="mt-6 space-y-3">
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">
-                    デモアカウント
-                  </span>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleDemoLogin('admin')}
-                  disabled={isLoading}
-                  className="w-full"
-                >
-                  管理者
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleDemoLogin('curator')}
-                  disabled={isLoading}
-                  className="w-full"
-                >
-                  投稿者
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleDemoLogin('viewer')}
-                  disabled={isLoading}
-                  className="w-full"
-                >
-                  一般ユーザー
-                </Button>
-              </div>
-              
-              <div className="text-xs text-muted-foreground text-center space-y-1">
-                <p>管理者: admin / admin123456</p>
-                <p>投稿者: curator / curator123456</p>
-                <p>一般ユーザー: viewer / viewer123456</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
