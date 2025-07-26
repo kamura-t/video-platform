@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyToken } from '@/lib/auth'
-import { writeFile, mkdir } from 'fs/promises'
-import path from 'path'
+import { storageService } from '@/lib/storage-service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -68,28 +67,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
+    // 古いアバター画像のパスを取得
+    const oldAvatarPath = user.profileImageUrl
 
-    // アップロードディレクトリの作成
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars')
-    try {
-      await mkdir(uploadsDir, { recursive: true })
-    } catch (error) {
-      // ディレクトリが既に存在する場合
-    }
-
-    // 一意のファイル名を生成
-    const timestamp = Date.now()
-    const fileExtension = path.extname(file.name)
-    const fileName = `user_${userId}_${timestamp}${fileExtension}`
-    const filePath = path.join(uploadsDir, fileName)
-
-    // ファイルを保存
-    await writeFile(filePath, buffer)
+    // StorageServiceを使用してアバターを更新（古い画像は自動削除）
+    const saveResult = await storageService.updateAvatar(
+      file, 
+      file.name, 
+      userId.toString(),
+      oldAvatarPath || undefined
+    )
 
     // ユーザーのプロフィール画像URLを更新
-    const profileImageUrl = `/uploads/avatars/${fileName}`
+    const profileImageUrl = saveResult.urlPath
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { profileImageUrl },
@@ -140,6 +130,23 @@ export async function DELETE(request: NextRequest) {
     }
 
     const userId = parseInt(currentUser.userId)
+
+    // 現在のユーザー情報を取得
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    })
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'ユーザーが見つかりません' },
+        { status: 404 }
+      )
+    }
+
+    // 古いアバター画像を削除
+    if (user.profileImageUrl) {
+      await storageService.deleteAvatar(user.profileImageUrl)
+    }
 
     // プロフィール画像URLをクリア
     const updatedUser = await prisma.user.update({

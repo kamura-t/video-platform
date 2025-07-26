@@ -183,7 +183,7 @@ sudo ufw status
 redis-cli
 
 # 認証テスト
-127.0.0.1:6379> AUTH your_strong_password_here
+127.0.0.1:6379> AUTH your_strong_password_here   8u22DNrbeYmH
 OK
 
 # 設定確認
@@ -373,7 +373,8 @@ sudo crontab -e
 ### 1. ローカル接続テスト
 ```bash
 # 基本接続
-redis-cli -h 127.0.0.1 -p 6379 -a your_strong_password_here
+redis-cli -h 127.0.0.1 -p 6379 -a 8u22DNrbeYmH
+8u22DNrbeYmH
 
 # 接続確認
 127.0.0.1:6379> ping
@@ -391,7 +392,7 @@ OK
 ### 2. リモート接続テスト
 ```bash
 # 別のサーバーから接続
-redis-cli -h 172.16.1.172 -p 6379 -a your_strong_password_here
+redis-cli -h 172.16.1.175 -p 6379 -a y8u22DNrbeYmH
 
 # SSL接続テスト（SSL設定済みの場合）
 redis-cli -h 172.16.1.172 -p 6380 -a your_strong_password_here --tls \

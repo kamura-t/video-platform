@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyToken } from '@/lib/auth'
-import { writeFile, mkdir } from 'fs/promises'
-import path from 'path'
+import { storageService } from '@/lib/storage-service'
 
 export async function POST(
   request: NextRequest,
@@ -79,28 +78,19 @@ export async function POST(
       )
     }
 
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
+    // 古いアバター画像のパスを取得
+    const oldAvatarPath = user.profileImageUrl
 
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars')
-    try {
-      await mkdir(uploadsDir, { recursive: true })
-    } catch (error) {
-      // Directory might already exist
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now()
-    const fileExtension = path.extname(file.name)
-    const fileName = `user_${userId}_${timestamp}${fileExtension}`
-    const filePath = path.join(uploadsDir, fileName)
-
-    // Save file
-    await writeFile(filePath, buffer)
+    // StorageServiceを使用してアバターを更新（古い画像は自動削除）
+    const saveResult = await storageService.updateAvatar(
+      file, 
+      file.name, 
+      userId.toString(),
+      oldAvatarPath || undefined
+    )
 
     // Update user's profile image URL
-    const profileImageUrl = `/uploads/avatars/${fileName}`
+    const profileImageUrl = saveResult.urlPath
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { profileImageUrl },
@@ -160,6 +150,23 @@ export async function DELETE(
         { success: false, error: '無効なユーザーIDです' },
         { status: 400 }
       )
+    }
+
+    // 現在のユーザー情報を取得
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    })
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'ユーザーが見つかりません' },
+        { status: 404 }
+      )
+    }
+
+    // 古いアバター画像を削除
+    if (user.profileImageUrl) {
+      await storageService.deleteAvatar(user.profileImageUrl)
     }
 
     // Remove profile image URL from user

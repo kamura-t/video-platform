@@ -105,9 +105,7 @@ export class StorageService {
       return true;
     } catch (error) {
       console.warn(`NAS path ${nasPath} is not accessible:`, error);
-      // 一時的にNAS可用性チェックを無効化（デバッグ用）
-      console.log('NAS availability check disabled for debugging');
-      return true;
+      return false;
     }
   }
 
@@ -212,7 +210,7 @@ export class StorageService {
 
 
 
-  // アバター保存
+  // アバター保存（NASに保存）
   async saveAvatar(
     file: File | Buffer,
     originalName: string,
@@ -224,55 +222,51 @@ export class StorageService {
     return this.saveFile(file, originalName, subDirectory, prefix);
   }
 
-  // ロゴ保存（常にローカルストレージを使用）
+  // ロゴ保存（NASに保存）
   async saveLogo(
     file: File | Buffer,
     originalName: string
   ): Promise<SaveFileResult> {
-    // ロゴは常にローカルストレージ（./public/uploads/logos/）に保存
-    const fileName = generateUniqueFileName(originalName, 'logo');
-    const localBasePath = path.join(process.cwd(), 'public', 'uploads');
-    const targetDir = path.join(localBasePath, 'logos');
+    const subDirectory = 'logos';
+    const prefix = 'logo';
     
-    // ディレクトリを作成
-    this.ensureDirectory(targetDir);
+    return this.saveFile(file, originalName, subDirectory, prefix);
+  }
 
-    const absolutePath = path.join(targetDir, fileName);
-    const urlPath = `/uploads/logos/${fileName}`;
-
-    // ファイルを保存
-    let buffer: Buffer;
-    let size: number;
-    let mimeType: string;
-
-    if (file instanceof File) {
-      buffer = Buffer.from(await file.arrayBuffer());
-      size = file.size;
-      mimeType = file.type;
-    } else {
-      buffer = file;
-      size = buffer.length;
-      mimeType = 'application/octet-stream';
+  // 古いアバター画像を削除してから新しいアバターを保存
+  async updateAvatar(
+    file: File | Buffer,
+    originalName: string,
+    userId: string,
+    oldAvatarPath?: string
+  ): Promise<SaveFileResult> {
+    // 古いアバター画像を削除
+    if (oldAvatarPath) {
+      try {
+        await this.deleteFile(oldAvatarPath);
+        console.log(`Old avatar deleted: ${oldAvatarPath}`);
+      } catch (error) {
+        console.warn(`Failed to delete old avatar: ${oldAvatarPath}`, error);
+        // 古いファイルの削除に失敗しても新しいファイルの保存は続行
+      }
     }
 
+    // 新しいアバターを保存
+    return this.saveAvatar(file, originalName, userId);
+  }
+
+  // アバター削除（ユーザー削除時など）
+  async deleteAvatar(avatarPath: string): Promise<boolean> {
     try {
-      console.log('Saving logo file to:', absolutePath);
-      fs.writeFileSync(absolutePath, buffer);
-      console.log('Logo file saved successfully');
+      const deleted = await this.deleteFile(avatarPath);
+      if (deleted) {
+        console.log(`Avatar deleted: ${avatarPath}`);
+      }
+      return deleted;
     } catch (error) {
-      console.error('Logo file save error:', error);
-      throw new Error(`ロゴファイルの保存に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Failed to delete avatar: ${avatarPath}`, error);
+      return false;
     }
-
-    return {
-      fileName,
-      filePath: urlPath,
-      absolutePath,
-      urlPath,
-      size,
-      mimeType,
-      storageType: 'local'
-    };
   }
 
   // 日付ベースのパス生成
@@ -290,18 +284,22 @@ export class StorageService {
     try {
       let absolutePath: string;
 
-      if (path.isAbsolute(filePath)) {
+      // `/videos` で始まるパスはURLパスなので、絶対パスとして扱わない
+      if (path.isAbsolute(filePath) && !filePath.startsWith('/videos')) {
         absolutePath = filePath;
       } else {
-        // ロゴファイルの場合は常にローカルストレージから削除
-        if (filePath.includes('/uploads/logos/')) {
-          const localBasePath = path.join(process.cwd(), 'public');
-          absolutePath = path.join(localBasePath, filePath);
-        } else {
-          // その他のファイルは従来通りの設定を使用
-          const config = await this.getStorageConfig();
-          absolutePath = path.join(config.basePath, filePath.replace(config.urlPrefix, ''));
+        const config = await this.getStorageConfig();
+        
+        // URLパスからファイルパスに変換
+        let relativePath = filePath;
+        if (filePath.startsWith(config.urlPrefix)) {
+          relativePath = filePath.replace(config.urlPrefix, '');
+          if (relativePath.startsWith('/')) {
+            relativePath = relativePath.substring(1);
+          }
         }
+        
+        absolutePath = path.join(config.basePath, relativePath);
       }
 
       if (fs.existsSync(absolutePath)) {
@@ -324,15 +322,9 @@ export class StorageService {
       if (path.isAbsolute(filePath)) {
         absolutePath = filePath;
       } else {
-        // ロゴファイルの場合は常にローカルストレージから確認
-        if (filePath.includes('/uploads/logos/')) {
-          const localBasePath = path.join(process.cwd(), 'public');
-          absolutePath = path.join(localBasePath, filePath);
-        } else {
-          // その他のファイルは従来通りの設定を使用
-          const config = await this.getStorageConfig();
-          absolutePath = path.join(config.basePath, filePath.replace(config.urlPrefix, ''));
-        }
+        // 従来通りの設定を使用
+        const config = await this.getStorageConfig();
+        absolutePath = path.join(config.basePath, filePath.replace(config.urlPrefix, ''));
       }
 
       return fs.existsSync(absolutePath);

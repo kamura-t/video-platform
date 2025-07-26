@@ -300,7 +300,7 @@ Description=GVA Video Platform Application
 After=network.target
 
 [Service]
-Type=forking
+Type=notify
 User=videoapp
 Group=videoapp
 WorkingDirectory=/var/www/video-platform
@@ -308,9 +308,9 @@ Environment=NODE_ENV=production
 EnvironmentFile=/var/www/video-platform/.env.production
 
 # PM2を通じてアプリケーションを起動
-ExecStart=/usr/bin/pm2 start ecosystem.config.js --env production
+ExecStart=/usr/bin/pm2 start ecosystem.config.js --env production --no-daemon
 ExecReload=/usr/bin/pm2 reload ecosystem.config.js --env production
-ExecStop=/usr/bin/pm2 delete ecosystem.config.js
+ExecStop=/usr/bin/pm2 stop ecosystem.config.js
 
 # 再起動設定
 Restart=always
@@ -333,6 +333,7 @@ WantedBy=multi-user.target
 
 ```bash
 # systemdサービス有効化・開始
+sudp chown -R videoapp:videoapp /home/videoapp/.pm2
 sudo systemctl daemon-reload
 sudo systemctl enable gva-video-platform.service
 sudo systemctl start gva-video-platform.service
@@ -350,8 +351,14 @@ sudo apt-get install -y nfs-common
 # マウントポイント作成
 sudo mkdir -p /mnt/nas/videos
 
-# /etc/fstab に NFS マウント設定追加
-echo "172.16.2.7:/share/videos /mnt/nas/videos nfs rw,hard,intr,rsize=32768,wsize=32768,tcp,timeo=14,_netdev 0 0" | sudo tee -a /etc/fstab
+# NFSサーバー側の利用可能ディレクトリ確認
+showmount -e 172.16.2.7
+
+# /etc/fstab に NFS 4.1 マウント設定追加
+echo "172.16.2.7:/videos /mnt/nas/videos nfs4 rw,hard,intr,rsize=32768,wsize=32768,timeo=14,_netdev,vers=4.1 0 0" | sudo tee -a /etc/fstab
+
+# systemd設定リロード（重要）
+sudo systemctl daemon-reload
 
 # マウント実行
 sudo mount -a
@@ -362,6 +369,12 @@ df -h | grep nas
 # 権限設定
 sudo chown -R videoapp:videoapp /mnt/nas/videos
 ```
+
+**重要**: NFS 4.1を使用する場合の注意点：
+- `nfs4`ファイルシステムタイプを使用
+- `vers=4.1`オプションを追加
+- systemd設定のリロードが必要
+- サーバー側のエクスポートディレクトリ名を正確に指定（`/videos`）
 
 ### 14. 監視・ヘルスチェック設定
 
@@ -694,36 +707,127 @@ free -h
 df -h
 ```
 
-## SSL/TLS証明書設定（オプション・Load Balancer併用時）
+## Nginxリバースプロキシ設定
 
-Load Balancerを使用しない場合のSSL設定：
+### 19. Nginxインストール・基本設定
 
 ```bash
-# Nginx インストール（リバースプロキシ用）
-sudo apt-get install -y nginx certbot python3-certbot-nginx
+# Nginxインストール
+sudo apt-get install -y nginx
 
-# Nginx設定
+# デフォルトサイトを無効化
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Nginx設定ディレクトリ作成
+sudo mkdir -p /etc/nginx/sites-available
+sudo mkdir -p /etc/nginx/sites-enabled
+```
+
+### 20. Nginxメイン設定
+
+```bash
+# Nginxメイン設定ファイル編集
+sudo nano /etc/nginx/nginx.conf
+```
+
+Nginxメイン設定内容：
+
+```nginx
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    # 基本設定
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 10G;
+    
+    # MIMEタイプ
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    
+    # ログ設定
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+    
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log warn;
+    
+    # Gzip圧縮
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+    
+    # セキュリティヘッダー
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+    add_header Referrer-Policy "strict-origin-when-cross-origin";
+    
+    # レート制限設定
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+    
+    # アップストリーム設定（負荷分散用）
+    upstream video_platform {
+        server 127.0.0.1:3000;
+        keepalive 32;
+    }
+    
+    # サイト設定
+    include /etc/nginx/sites-enabled/*;
+}
+```
+
+### 21. アプリケーション用Nginx設定
+
+```bash
+# アプリケーション用設定ファイル作成
 sudo nano /etc/nginx/sites-available/video-platform
 ```
 
-Nginx設定内容：
+アプリケーション設定内容：
 
 ```nginx
+# HTTP設定（リダイレクト用）
 server {
     listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
+    server_name video.your-domain.com;
     
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    # ヘルスチェック用エンドポイント
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
     
+    # メインアプリケーション
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://video_platform;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -733,19 +837,359 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
         
+        # タイムアウト設定
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # バッファ設定
+        proxy_buffering on;
+        proxy_buffer_size 4k;
+        proxy_buffers 8 4k;
+        proxy_busy_buffers_size 8k;
+        
+        # ファイルアップロード対応
         client_max_body_size 10G;
+        client_body_timeout 300s;
+        client_header_timeout 60s;
+    }
+    
+    # API用レート制限
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        
+        proxy_pass http://video_platform;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # API用タイムアウト
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+    
+    # 認証用レート制限
+    location /api/auth/ {
+        limit_req zone=login burst=5 nodelay;
+        
+        proxy_pass http://video_platform;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # 静的ファイル配信（Next.js経由）
+    location /_next/static/ {
+        proxy_pass http://video_platform;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ユーザーアバター画像の静的配信
+    location /uploads/avator/ {
+        root /var/www/video-platform/public;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000";
+    }
+
+    # ロゴ画像の静的配信
+    location /uploads/logo/ {
+        root /var/www/video-platform/public;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000";
+    }
+    
+    # 静的ファイル配信（Nginx直接配信の場合）
+    # location /static/ {
+    #     root /var/www/video-platform/public;
+    #     expires 1y;
+    #     add_header Cache-Control "public, immutable";
+    # }
+    
+    # 動画ファイル配信
+    location /videos/ {
+        proxy_pass http://video_platform;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 動画用タイムアウト
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        
+        # 動画ファイル用バッファ
+        proxy_buffering on;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+    }
+    
+    # サムネイル配信
+    location /thumbnails/ {
+        proxy_pass http://video_platform;
+        expires 1d;
+        add_header Cache-Control "public";
+    }
+    
+    # エラーページ
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
+    
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}
+```
+
+### 22. Nginx設定適用
+
+```bash
+# 設定ファイルの構文チェック
+sudo nginx -t
+
+# 設定ファイル有効化
+sudo ln -s /etc/nginx/sites-available/video-platform /etc/nginx/sites-enabled/
+
+# Nginx起動・有効化
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# ファイアウォール設定更新
+sudo ufw allow 'Nginx Full'
+sudo ufw allow 80
+sudo ufw allow 443
+
+# 設定確認
+sudo systemctl status nginx
+sudo nginx -T | grep -A 10 "server_name"
+```
+
+### 23. SSL/TLS証明書設定（Let's Encrypt）
+
+```bash
+# Certbotインストール
+sudo apt-get install -y certbot python3-certbot-nginx
+
+# SSL証明書取得
+sudo certbot --nginx -d video.your-domain.com
+
+# 自動更新設定
+sudo crontab -e
+```
+
+cron設定に追加：
+
+```bash
+# Let's Encrypt証明書自動更新
+0 12 * * * /usr/bin/certbot renew --quiet
+```
+
+### 24. HTTPS設定の強化
+
+```bash
+# SSL設定ファイル作成
+sudo nano /etc/nginx/snippets/ssl-params.conf
+```
+
+SSL設定内容：
+
+```nginx
+# SSL設定
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers on;
+ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+ssl_ecdh_curve secp384r1;
+ssl_session_timeout 10m;
+ssl_session_cache shared:SSL:10m;
+ssl_session_tickets off;
+ssl_stapling on;
+ssl_stapling_verify on;
+
+# セキュリティヘッダー
+add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+add_header X-Frame-Options DENY;
+add_header X-Content-Type-Options nosniff;
+add_header X-XSS-Protection "1; mode=block";
+```
+
+### 25. HTTPS設定の適用
+
+```bash
+# HTTPS設定ファイル作成
+sudo nano /etc/nginx/sites-available/video-platform-ssl
+```
+
+HTTPS設定内容：
+
+```nginx
+# HTTP to HTTPS リダイレクト
+server {
+    listen 80;
+    server_name video.your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS設定
+server {
+    listen 443 ssl http2;
+    server_name video.your-domain.com;
+    
+    # SSL証明書
+    ssl_certificate /etc/letsencrypt/live/video.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/video.your-domain.com/privkey.pem;
+    include /etc/nginx/snippets/ssl-params.conf;
+    
+    # ヘルスチェック
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+    
+    # メインアプリケーション
+    location / {
+        proxy_pass http://video_platform;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        
+        # タイムアウト設定
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # ファイルアップロード対応
+        client_max_body_size 10G;
+        client_body_timeout 300s;
+        client_header_timeout 60s;
+    }
+    
+    # API用レート制限
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        
+        proxy_pass http://video_platform;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # 静的ファイル配信
+    location /_next/static/ {
+        proxy_pass http://video_platform;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # 動画ファイル配信
+    location /videos/ {
+        proxy_pass http://video_platform;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 動画用タイムアウト
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+    
+    # サムネイル配信
+    location /thumbnails/ {
+        proxy_pass http://video_platform;
+        expires 1d;
+        add_header Cache-Control "public";
     }
 }
 ```
 
 ```bash
-# サイト有効化
-sudo ln -s /etc/nginx/sites-available/video-platform /etc/nginx/sites-enabled/
+# HTTPS設定適用
+sudo rm -f /etc/nginx/sites-enabled/video-platform
+sudo ln -s /etc/nginx/sites-available/video-platform-ssl /etc/nginx/sites-enabled/
+
+# 設定テスト・再読み込み
 sudo nginx -t
 sudo systemctl reload nginx
+```
 
-# SSL証明書取得
-sudo certbot --nginx -d your-domain.com
+### 26. Nginx監視・ログ設定
+
+```bash
+# Nginxログローテーション設定
+sudo nano /etc/logrotate.d/nginx
+```
+
+Nginxログローテーション設定：
+
+```
+/var/log/nginx/*.log {
+    daily
+    missingok
+    rotate 52
+    compress
+    delaycompress
+    notifempty
+    create 640 www-data adm
+    postrotate
+        if [ -f /var/run/nginx.pid ]; then
+            kill -USR1 `cat /var/run/nginx.pid`
+        fi
+    endscript
+}
+```
+
+### 27. 最終テスト・動作確認
+
+```bash
+# Nginx設定テスト
+echo "=== Nginx Configuration Test ==="
+sudo nginx -t
+
+# Nginx状態確認
+echo "=== Nginx Status ==="
+sudo systemctl status nginx
+
+# ポート確認
+echo "=== Port Check ==="
+sudo netstat -tlnp | grep nginx
+
+# HTTP接続テスト
+echo "=== HTTP Connection Test ==="
+curl -I http://video.your-domain.com/health
+
+# HTTPS接続テスト（SSL証明書取得後）
+echo "=== HTTPS Connection Test ==="
+curl -I https://video.your-domain.com/health
+
+# アプリケーション接続テスト
+echo "=== Application Connection Test ==="
+curl -I http://video.your-domain.com/api/health
+
+# SSL証明書確認
+echo "=== SSL Certificate Check ==="
+openssl s_client -connect video.your-domain.com:443 -servername video.your-domain.com < /dev/null 2>/dev/null | openssl x509 -noout -dates
+
+# パフォーマンステスト
+echo "=== Performance Test ==="
+ab -n 100 -c 10 http://video.your-domain.com/health
 ```
 
 ## トラブルシューティング
@@ -885,6 +1329,98 @@ sudo systemctl restart gva-video-platform.service
 sudo -u videoapp pm2 env 0
 ```
 
+#### 10. Nginx関連エラー
+```bash
+# Nginx設定ファイルの構文チェック
+sudo nginx -t
+
+# Nginxエラーログ確認
+sudo tail -f /var/log/nginx/error.log
+
+# Nginxアクセスログ確認
+sudo tail -f /var/log/nginx/access.log
+
+# Nginxプロセス確認
+sudo systemctl status nginx
+ps aux | grep nginx
+
+# ポート確認
+sudo netstat -tlnp | grep :80
+sudo netstat -tlnp | grep :443
+
+# ファイアウォール設定確認
+sudo ufw status
+sudo ufw allow 'Nginx Full'
+
+# 設定ファイルの権限確認
+ls -la /etc/nginx/sites-enabled/
+ls -la /etc/nginx/sites-available/
+
+# SSL証明書確認
+sudo certbot certificates
+sudo openssl x509 -in /etc/letsencrypt/live/video.your-domain.com/fullchain.pem -text -noout
+
+# ドメイン名解決確認
+nslookup video.your-domain.com
+dig video.your-domain.com
+
+# 手動でNginx再起動
+sudo systemctl restart nginx
+sudo nginx -s reload
+```
+
+#### 11. SSL証明書関連エラー
+```bash
+# Certbot状態確認
+sudo certbot certificates
+
+# 証明書更新テスト
+sudo certbot renew --dry-run
+
+# 証明書の有効期限確認
+sudo openssl x509 -in /etc/letsencrypt/live/video.your-domain.com/cert.pem -noout -dates
+
+# 証明書の自動更新設定確認
+sudo crontab -l | grep certbot
+
+# 手動で証明書更新
+sudo certbot renew
+
+# 証明書ファイルの権限確認
+ls -la /etc/letsencrypt/live/video.your-domain.com/
+sudo chmod 644 /etc/letsencrypt/live/video.your-domain.com/cert.pem
+sudo chmod 644 /etc/letsencrypt/live/video.your-domain.com/chain.pem
+sudo chmod 644 /etc/letsencrypt/live/video.your-domain.com/fullchain.pem
+sudo chmod 600 /etc/letsencrypt/live/video.your-domain.com/privkey.pem
+```
+
+#### 12. リバースプロキシ関連エラー
+```bash
+# アップストリームサーバー接続確認
+curl -I http://127.0.0.1:3000/health
+
+# プロキシヘッダー確認
+curl -H "X-Forwarded-For: 1.2.3.4" -H "X-Real-IP: 1.2.3.4" http://video.your-domain.com/api/health
+
+# タイムアウト設定確認
+grep -r "timeout" /etc/nginx/sites-available/
+
+# バッファ設定確認
+grep -r "buffer" /etc/nginx/sites-available/
+
+# レート制限確認
+grep -r "limit_req" /etc/nginx/sites-available/
+
+# 静的ファイル配信確認
+curl -I http://video.your-domain.com/_next/static/
+
+# 動画ファイル配信確認
+curl -I http://video.your-domain.com/videos/
+
+# サムネイル配信確認
+curl -I http://video.your-domain.com/thumbnails/
+```
+
 ## セットアップ完了チェックリスト
 
 - [ ] Node.js 22 LTSインストール完了
@@ -905,7 +1441,14 @@ sudo -u videoapp pm2 env 0
 - [ ] アプリケーション動作テスト完了
 - [ ] 外部サービス連携テスト完了
 - [ ] NAS設定完了（オプション）
-- [ ] SSL/TLS証明書設定完了（オプション）
+- [ ] Nginxインストール・基本設定完了
+- [ ] Nginxメイン設定完了
+- [ ] アプリケーション用Nginx設定完了
+- [ ] Nginx設定適用・起動完了
+- [ ] SSL/TLS証明書設定完了
+- [ ] HTTPS設定強化完了
+- [ ] Nginx監視・ログ設定完了
+- [ ] Nginx最終テスト・動作確認完了
 
 ---
 
@@ -928,7 +1471,15 @@ sudo -u videoapp pm2 env 0
 - 外部サービス（Redis、GPUサーバー、データベース）への接続を定期的に確認してください
 - Load Balancerと組み合わせる場合は、直接的なHTTPS設定は不要です
 
+### Nginx・リバースプロキシ
+- Nginx設定ファイルの構文チェックを必ず実行してください（`sudo nginx -t`）
+- SSL証明書の有効期限を定期的に確認してください
+- レート制限設定が適切に機能していることを確認してください
+- 静的ファイルのキャッシュ設定が正しく動作していることを確認してください
+- 動画ファイル配信時のタイムアウト設定を適切に調整してください
+
 ### 監視・メンテナンス
 - ヘルスチェックスクリプトが正常に動作することを確認してください
 - ログローテーションが適切に設定されていることを確認してください
 - 定期的なバックアップと復旧テストを実施してください
+- Nginxアクセスログとエラーログを定期的に確認してください
