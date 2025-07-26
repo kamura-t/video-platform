@@ -130,8 +130,15 @@ npm run type-check
 
 ### 7. 環境変数設定
 
+**重要**: 環境変数は本番環境の動作に不可欠です。以下の設定が正しく行われていないと、アプリケーションが正常に動作しません。
+
+**Next.js環境変数ファイル命名規則:**
+- 開発環境: `.env.local`
+- 本番環境: `.env.production`
+- テスト環境: `.env.test`
+
 ```bash
-# 環境設定ファイル作成
+# 環境設定ファイル作成（Next.js標準命名規則）
 nano /var/www/video-platform/.env.production
 ```
 
@@ -140,78 +147,52 @@ nano /var/www/video-platform/.env.production
 ```env
 # 本番環境設定
 NODE_ENV=production
-PORT=3000
 
 # データベース接続（172.16.1.174のPostgreSQLサーバー）
 DATABASE_URL="postgresql://gva_user:PQaEU8Gj3vjNTT2T_SecurePass2024!@172.16.1.174:5432/gva_video_platform"
 
-# Redis接続（172.16.1.175のRedisサーバー）
-REDIS_URL="redis://172.16.1.175:6379"
-
 # JWT認証キー（openssl rand -base64 32 で生成）
 JWT_SECRET="tK7XvP2+9mR4nQ8hE3wY5zB6vC1xA7sD2gF9kL0pM8nH4jR6tY3qW5eN1bV8cX2m"
-JWT_REFRESH_SECRET="jH8kL5nM2pQ9wE4rT7yU1iO6aS3dF0gB7nV4cX8zL6mK3qJ9hR2eY5tP1wA4sG7k"
-SESSION_SECRET="mN9bV6cX2zL5kH8jF4gD7sA0qW3eR6tY1uI8oP5aS2fG9hJ7nM4lK1xZ3vB0cN6m"
-
-# ファイルストレージ設定
-UPLOAD_PATH="/var/lib/video-platform/uploads"
-TEMP_DIR="/var/lib/video-platform/temp"
-THUMBNAIL_PATH="/var/lib/video-platform/thumbnails"
-MAX_FILE_SIZE=10737418240  # 10GB
-
-# 動画処理設定
-FFMPEG_PATH="/usr/bin/ffmpeg"
-IMAGEMAGICK_PATH="/usr/bin/convert"
 
 # GPU変換サーバー設定
 GPU_SERVER_URL="http://172.16.1.172:3001"
-TRANSCODING_ENABLED=true
-MAX_CONCURRENT_JOBS=4
 
-# NAS設定（オプション）
-NAS_ENABLED=true
-NAS_HOST="172.16.2.7"
-NAS_MOUNT_PATH="/mnt/nas/videos"
-NAS_USERNAME="videouser"
-NAS_PASSWORD="secure_nas_password"
-
-# API設定
-API_BASE_URL="https://your-domain.com"
-ALLOWED_ORIGINS="https://your-domain.com,https://www.your-domain.com"
-
-# セキュリティ設定
-PRIVATE_NETWORK_RANGES="192.168.0.0/16,172.16.0.0/12,10.0.0.0/8"
-RATE_LIMIT_WINDOW=900000  # 15分
-RATE_LIMIT_MAX_REQUESTS=1000
-
-# YouTube API設定（オプション）
-YOUTUBE_API_KEY="your_youtube_api_key_here"
-
-# Google Translate設定
-GOOGLE_TRANSLATE_ENABLED=true
-GOOGLE_TRANSLATE_PAGE_LANGUAGE=ja
-GOOGLE_TRANSLATE_INCLUDED_LANGUAGES=en,ko,zh-CN,zh-TW,th,vi,es,fr,de
-
-# メール設定（通知用）
-SMTP_HOST="smtp.your-domain.com"
-SMTP_PORT=587
-SMTP_USER="noreply@your-domain.com"
-SMTP_PASS="smtp_secure_password"
-SMTP_FROM="GVA Video Platform <noreply@your-domain.com>"
+# NAS設定
+NFS_MOUNTED="true"
+VIDEO_ARCHIVE_PATH="/mnt/nas/archives"
+NAS_VIDEOS_PATH="/mnt/nas/videos"
+GPU_NAS_VIDEOS_PATH="/mnt/nas/videos"
 ```
 
 ```bash
 # 環境ファイルの権限設定
 chmod 600 /var/www/video-platform/.env.production
+
+# 環境変数の検証
+echo "=== 環境変数設定確認 ==="
+echo "DATABASE_URL: $(grep DATABASE_URL /var/www/video-platform/.env.production | cut -d'=' -f2-)"
+echo "GPU_SERVER_URL: $(grep GPU_SERVER_URL /var/www/video-platform/.env.production | cut -d'=' -f2-)"
+echo "JWT_SECRET: $(grep JWT_SECRET /var/www/video-platform/.env.production | cut -d'=' -f2- | head -c 20)..."
+echo "NFS_MOUNTED: $(grep NFS_MOUNTED /var/www/video-platform/.env.production | cut -d'=' -f2-)"
+echo "VIDEO_ARCHIVE_PATH: $(grep VIDEO_ARCHIVE_PATH /var/www/video-platform/.env.production | cut -d'=' -f2-)"
+echo "NAS_VIDEOS_PATH: $(grep NAS_VIDEOS_PATH /var/www/video-platform/.env.production | cut -d'=' -f2-)"
+
+# 必須環境変数の存在確認
+required_vars=("DATABASE_URL" "JWT_SECRET" "GPU_SERVER_URL" "NFS_MOUNTED")
+for var in "${required_vars[@]}"; do
+    if grep -q "^${var}=" /var/www/video-platform/.env.production; then
+        echo "✅ ${var}: 設定済み"
+    else
+        echo "❌ ${var}: 未設定"
+    fi
+done
 ```
 
 ### 8. セキュリティキーの生成
 
 ```bash
-# JWT・セッション用セキュリティキー生成
+# JWT認証用セキュリティキー生成
 echo "JWT_SECRET=$(openssl rand -base64 32)"
-echo "JWT_REFRESH_SECRET=$(openssl rand -base64 32)"
-echo "SESSION_SECRET=$(openssl rand -base64 32)"
 
 # 生成されたキーを.env.productionに設定
 ```
@@ -880,12 +861,37 @@ npm install @types/node --save-dev --legacy-peer-deps
 npm update next-themes --legacy-peer-deps
 ```
 
+#### 9. 環境変数関連エラー
+```bash
+# 環境変数ファイルの存在確認
+ls -la /var/www/video-platform/.env.production
+
+# 環境変数の内容確認（セキュリティに注意）
+cat /var/www/video-platform/.env.production
+
+# 必須環境変数の確認
+grep -E "^(DATABASE_URL|JWT_SECRET|GPU_SERVER_URL|NFS_MOUNTED)=" /var/www/video-platform/.env.production
+
+# 環境変数の権限確認
+ls -la /var/www/video-platform/.env.production
+
+# Next.js環境変数の読み込み確認
+sudo -u videoapp npm run build
+
+# 環境変数の再読み込み
+sudo systemctl restart gva-video-platform.service
+
+# PM2での環境変数確認
+sudo -u videoapp pm2 env 0
+```
+
 ## セットアップ完了チェックリスト
 
 - [ ] Node.js 22 LTSインストール完了
 - [ ] アプリケーション用ユーザー・ディレクトリ作成完了
 - [ ] FFmpeg・動画処理ツールインストール完了
 - [ ] 環境変数設定完了
+- [ ] 環境変数検証完了
 - [ ] データベース接続・初期化完了
 - [ ] Redis接続確認完了
 - [ ] GPUサーバー接続確認完了
@@ -909,6 +915,7 @@ npm update next-themes --legacy-peer-deps
 - セキュリティキーは例示です。本番環境では必ず新しいキーを生成してください
 - データベースパスワードは実際の設定値に合わせてください
 - 環境変数ファイル（.env.production）の権限は600に設定してください
+- Next.js標準の環境変数ファイル命名規則を使用してください（.env.local, .env.production）
 - 定期的にセキュリティアップデートを実施してください
 
 ### パフォーマンス
