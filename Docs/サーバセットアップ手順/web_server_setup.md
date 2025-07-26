@@ -110,7 +110,7 @@ cd /var/www/video-platform
 git clone https://github.com/your-org/gva-video-platform.git .
 
 # 本番用依存関係インストール
-npm ci --production
+npm ci --production #依存回避の場合 npm ci --production --legacy-peer-deps
 
 # Next.js用TypeScript設定
 npm install -g typescript
