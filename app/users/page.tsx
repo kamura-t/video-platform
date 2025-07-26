@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -25,7 +25,7 @@ interface User {
   lastActiveAt?: string;
 }
 
-export default function UsersPage() {
+function UsersContent() {
   const { user, isAuthenticated } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -294,5 +294,23 @@ export default function UsersPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function UsersPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center">
+            <Search className="w-8 h-8 animate-spin text-primary mr-3" />
+            <span>読み込み中...</span>
+          </div>
+        </div>
+      </div>
+    }>
+      <UsersContent />
+    </Suspense>
   );
 } 

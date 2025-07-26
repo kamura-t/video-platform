@@ -63,25 +63,7 @@ function UserPageContent() {
     };
   });
 
-  // @で始まらない場合は404
-  if (!rawUsername?.startsWith('@')) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center space-y-4">
-            <h1 className="text-2xl font-bold">ページが見つかりません</h1>
-            <p className="text-muted-foreground">指定されたページは存在しません。</p>
-            <Button onClick={() => router.push('/')}>
-              ホームに戻る
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const username = rawUsername.substring(1); // Remove @ prefix
+  const username = rawUsername?.startsWith('@') ? rawUsername.substring(1) : null;
 
   // Get available tags from videos
   const availableTags = useMemo(() => {
@@ -210,7 +192,7 @@ function UserPageContent() {
     if (username && !isLoadingSettings) {
       loadUserData(false);
     }
-  }, [username, filters, videosPerPage, isLoadingSettings]);
+  }, [username, filters, videosPerPage, isLoadingSettings, loadUserData]);
 
   const handleFiltersChange = (newFilters: SearchFilters) => {
     setFilters(newFilters);
@@ -221,6 +203,24 @@ function UserPageContent() {
       loadUserData(true);
     }
   };
+
+  // @で始まらない場合は404
+  if (!username) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center space-y-4">
+            <h1 className="text-2xl font-bold">ページが見つかりません</h1>
+            <p className="text-muted-foreground">指定されたページは存在しません。</p>
+            <Button onClick={() => router.push('/')}>
+              ホームに戻る
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || isLoadingSettings) {
     return (

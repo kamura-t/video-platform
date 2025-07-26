@@ -341,7 +341,7 @@ export const SearchFiltersComponent: React.FC<SearchFiltersProps> = ({
               <div className="flex flex-wrap gap-2 mt-2">
                 {filters.query && (
                   <Badge variant="outline" className="text-xs">
-                    <span>検索: "{filters.query}"</span>
+                    <span>検索: &quot;{filters.query}&quot;</span>
                     <Button
                       variant="ghost"
                       size="sm"

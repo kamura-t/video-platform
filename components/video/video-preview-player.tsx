@@ -33,7 +33,7 @@ export interface VideoPreviewPlayerRef {
 }
 
 export const VideoPreviewPlayer = forwardRef<VideoPreviewPlayerRef, VideoPreviewPlayerProps>(
-  ({ video, onThumbnailGenerated, className }, ref) => {
+  function VideoPreviewPlayer({ video, onThumbnailGenerated, className }, ref) {
     const playerRef = useRef<any>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);

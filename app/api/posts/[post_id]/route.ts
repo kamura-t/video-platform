@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { checkPrivateVideoAccess, getClientIP } from '@/lib/ip-access-control'
+import { checkInternalVideoAccess } from '@/lib/auth-access-control'
+import { getClientIP } from '@/lib/ip-access-control'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 
 export async function GET(
@@ -105,13 +106,12 @@ export async function GET(
       return createErrorResponse('この投稿は非公開に設定されています', 403);
     }
 
-    // Check private video access
+    // Check internal video access
     if (post.visibility === 'PRIVATE') {
-      const hasAccess = await checkPrivateVideoAccess(request)
+      const hasAccess = await checkInternalVideoAccess(request)
       if (!hasAccess) {
-        const clientIP = getClientIP(request)
-        console.log(`Private video access denied for IP: ${clientIP}, post: ${postId}`)
-        return createErrorResponse('この動画は組織内ネットワークからのみアクセス可能です', 403);
+        console.log(`Internal video access denied for post: ${postId}`)
+        return createErrorResponse('この動画はログインユーザーのみアクセス可能です', 403);
       }
     }
 

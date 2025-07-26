@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { checkPrivateVideoAccess } from '@/lib/ip-access-control'
+import { checkInternalVideoAccess } from '@/lib/auth-access-control'
 
 export async function GET(
   request: NextRequest,
@@ -47,15 +47,15 @@ export async function GET(
 
     const skip = (page - 1) * limit
 
-    // プライベート動画へのアクセス権限をチェック
-    const hasPrivateAccess = await checkPrivateVideoAccess(request)
+    // 学内限定動画へのアクセス権限をチェック
+    const hasInternalAccess = await checkInternalVideoAccess(request)
 
     // 基本的な検索条件
     const baseWhere: any = {
       creatorId: userId,
       // 公開されているプレイリストのみ表示
       posts: {
-        some: hasPrivateAccess ? {
+        some: hasInternalAccess ? {
           visibility: {
             in: ['PUBLIC', 'PRIVATE']
           }

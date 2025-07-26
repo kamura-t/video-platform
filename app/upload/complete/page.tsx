@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
 import { MainLayout } from '@/components/layout/main-layout';
@@ -23,7 +23,8 @@ import {
   Monitor,
   HardDrive,
   Upload,
-  List
+  List,
+  Edit
 } from 'lucide-react';
 
 interface VideoInfo {
@@ -42,7 +43,7 @@ interface VideoInfo {
   youtubeUrl?: string;
   youtubeVideoId?: string;
   uploaderId: number;
-  visibility: 'PUBLIC' | 'PRIVATE' | 'RESTRICTED';
+  visibility: 'PUBLIC' | 'PRIVATE' | 'DRAFT';
   status: 'COMPLETED' | 'PROCESSING' | 'FAILED';
   gpuJobId?: string;
   createdAt: string;
@@ -110,7 +111,7 @@ interface TranscodeJob {
   estimatedTimeRemaining?: number; // 推定残り時間を追加
 }
 
-export default function UploadCompletePage() {
+function UploadCompleteContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -803,34 +804,46 @@ export default function UploadCompletePage() {
           </Card>
           )}
 
-          {/* アクションボタン */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
-              onClick={() => router.push(`/watch/${videoInfo.videoId}`)}
-              className="flex items-center gap-2"
-            >
-              <Play className="w-4 h-4" />
-              再生ページへ
-            </Button>
-            
-            <Button 
-              variant="outline"
-              onClick={() => router.push('/upload')}
-              className="flex items-center gap-2"
-            >
-              <Clock className="w-4 h-4" />
-              追加アップロード
-            </Button>
-            
-            <Button 
-              variant="outline"
-              onClick={() => router.push('/')}
-              className="flex items-center gap-2"
-            >
-              <Clock className="w-4 h-4" />
-              投稿一覧へ
-            </Button>
-          </div>
+          {/* アクションボタン - GPU変換完了時または非ファイルアップロード時に表示 */}
+          {(videoInfo?.uploadType !== 'FILE' || 
+            (transcodeJob && transcodeJob.status === 'COMPLETED' && transcodeJob.progress === 100)) && (
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              {/* 動画編集リンクを先頭に配置 */}
+              <Button 
+                onClick={() => router.push(`/admin/videos/${videoInfo.id}/edit`)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+              >
+                <Edit className="w-4 h-4" />
+                動画を編集
+              </Button>
+              
+              <Button 
+                onClick={() => router.push(`/watch/${videoInfo.videoId}`)}
+                className="flex items-center gap-2"
+              >
+                <Play className="w-4 h-4" />
+                再生ページへ
+              </Button>
+              
+              <Button 
+                variant="outline"
+                onClick={() => router.push('/upload')}
+                className="flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                追加アップロード
+              </Button>
+              
+              <Button 
+                variant="outline"
+                onClick={() => router.push('/')}
+                className="flex items-center gap-2"
+              >
+                <List className="w-4 h-4" />
+                投稿一覧へ
+              </Button>
+            </div>
+          )}
 
           {/* 注意事項（ファイルアップロードの場合のみ表示） */}
           {videoInfo?.uploadType === 'FILE' && (
@@ -850,5 +863,22 @@ export default function UploadCompletePage() {
         </div>
       </div>
     </MainLayout>
+  );
+}
+
+export default function UploadCompletePage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-center">
+            <Clock className="w-8 h-8 animate-spin text-primary mr-3" />
+            <span>読み込み中...</span>
+          </div>
+        </div>
+      </div>
+    }>
+      <UploadCompleteContent />
+    </Suspense>
   );
 } 

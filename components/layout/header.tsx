@@ -34,6 +34,8 @@ import {
   Filter,
   ChevronRight,
   PlaySquare,
+  Heart,
+  Clock,
 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 
@@ -252,6 +254,18 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/favorites" className="cursor-pointer">
+                        <Heart className="mr-2 h-4 w-4" />
+                        お気に入り
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/view-history" className="cursor-pointer">
+                        <Clock className="mr-2 h-4 w-4" />
+                        視聴履歴
+                      </Link>
+                    </DropdownMenuItem>
                     {user.role !== 'VIEWER' && (
                       <DropdownMenuItem asChild>
                         <Link href="/playlists" className="cursor-pointer">
@@ -478,6 +492,18 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* User menu items */}
                 {isAuthenticated && user ? (
                   <>
+                    <Button variant="ghost" size="sm" className="justify-start" asChild>
+                      <Link href="/favorites">
+                        <Heart className="mr-2 h-4 w-4" />
+                        お気に入り
+                      </Link>
+                    </Button>
+                    <Button variant="ghost" size="sm" className="justify-start" asChild>
+                      <Link href="/view-history">
+                        <Clock className="mr-2 h-4 w-4" />
+                        視聴履歴
+                      </Link>
+                    </Button>
                     {user.role !== 'VIEWER' && (
                       <Button variant="ghost" size="sm" className="justify-start" asChild>
                         <Link href="/playlists">

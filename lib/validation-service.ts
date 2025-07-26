@@ -55,12 +55,19 @@ export class ValidationService {
       try {
         const response = await fetch('/api/settings/public');
         if (response.ok) {
-          const data = await response.json();
-          return {
+          const result = await response.json();
+          const data = result.data || result; // createSuccessResponseの構造に対応
+          console.log('📊 設定API応答:', result);
+          console.log('📊 設定データ:', data);
+          console.log('📊 max_image_size_mb値:', data.max_image_size_mb);
+          
+          const config = {
             maxFileSizeMB: parseInt(data.max_file_size_mb || '5120'),
-            maxImageSizeMB: parseInt(data.max_image_size_mb || '2'),
+            maxImageSizeMB: parseInt(data.max_image_size_mb || '10'),
             allowedFileTypes: data.allowed_file_types || 'mp4,mov,avi,mkv,wmv,flv,webm'
           };
+          console.log('📊 処理された設定:', config);
+          return config;
         }
       } catch (error) {
         console.error('Failed to fetch config:', error);
@@ -69,7 +76,7 @@ export class ValidationService {
       // デフォルト設定
       return {
         maxFileSizeMB: 5120,
-        maxImageSizeMB: 2,
+        maxImageSizeMB: 10,
         allowedFileTypes: 'mp4,mov,avi,mkv,wmv,flv,webm'
       };
     }
@@ -77,7 +84,7 @@ export class ValidationService {
     // デフォルト設定（サーバーサイドでconfigServiceがnullの場合）
     return {
       maxFileSizeMB: 5120,
-      maxImageSizeMB: 2,
+      maxImageSizeMB: 10,
       allowedFileTypes: 'mp4,mov,avi,mkv,wmv,flv,webm'
     };
   }

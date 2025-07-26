@@ -79,16 +79,55 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [userRole, setUserRole] = useState<string>('')
+
+  // ユーザー情報を取得
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include'
+        })
+        const result = await response.json()
+        if (result.success && result.data?.user) {
+          setUserRole(result.data.user.role)
+        }
+      } catch (error) {
+        console.error('Failed to fetch user info:', error)
+      }
+    }
+    fetchUserInfo()
+  }, [])
 
   // 動画を取得する関数
   const fetchVideos = useCallback(async (query?: string) => {
+    if (!userRole) {
+      return
+    }
+    
     try {
       setIsSearching(true)
       setError('')
       
-      const url = query 
-        ? `/api/videos?includePrivate=true&search=${encodeURIComponent(query)}&limit=50`
-        : '/api/videos?includePrivate=true&limit=50'
+      // プレイリスト作成での動画取得
+      const includePrivate = formData.visibility !== 'PUBLIC'
+      // ADMINは全ての動画、CURATORは自分の動画のみ
+      const myVideosOnly = userRole === 'CURATOR'
+      
+      const params = new URLSearchParams({
+        includePrivate: includePrivate.toString(),
+        limit: '50'
+      })
+      
+      if (myVideosOnly) {
+        params.append('myVideosOnly', 'true')
+      }
+      
+      if (query) {
+        params.append('search', query)
+      }
+      
+      const url = `/api/videos?${params.toString()}`
       
       const response = await fetch(url, {
         credentials: 'include'
@@ -113,15 +152,19 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
     } finally {
       setIsSearching(false)
     }
-  }, [])
+  }, [formData.visibility, userRole])
 
-  // 初回読み込み
+  // ユーザーロール取得後に動画を読み込み
   useEffect(() => {
-    fetchVideos()
-  }, [fetchVideos])
+    if (userRole) {
+      fetchVideos()
+    }
+  }, [fetchVideos, userRole])
 
   // 検索処理（デバウンス）
   useEffect(() => {
+    if (!userRole) return // ユーザーロールが取得されるまで待機
+    
     const timeoutId = setTimeout(() => {
       if (searchQuery.trim()) {
         fetchVideos(searchQuery)
@@ -131,7 +174,7 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
     }, 300)
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, fetchVideos])
+  }, [searchQuery, fetchVideos, userRole])
 
   // 動画を選択に追加
   const addVideo = useCallback((video: Video) => {
@@ -202,18 +245,21 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
 
     try {
       setIsCreating(true)
+      
+      const requestData = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        videoIds: selectedVideos.map(v => v.id),
+        visibility: formData.visibility
+      }
+      
       const response = await fetch('/api/playlists', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          videoIds: selectedVideos.map(v => v.id),
-          visibility: formData.visibility
-        }),
+        body: JSON.stringify(requestData),
       })
 
       const result = await response.json()
@@ -271,7 +317,14 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
                 <Label htmlFor="visibility">公開設定</Label>
                 <Select 
                   value={formData.visibility} 
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, visibility: value }))}
+                  onValueChange={(value) => {
+                    setFormData(prev => ({ ...prev, visibility: value }))
+                    // 学外公開に変更した場合、選択された動画をクリア（互換性確保のため）
+                    if (value === 'PUBLIC' && formData.visibility === 'PRIVATE') {
+                      setSelectedVideos([])
+                      setError('公開設定を学外公開に変更したため、選択された動画をクリアしました。学外公開動画のみ選択し直してください。')
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -279,9 +332,19 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
                   <SelectContent>
                     <SelectItem value="PUBLIC">学外公開</SelectItem>
                     <SelectItem value="PRIVATE">学内限定</SelectItem>
-                    <SelectItem value="DRAFT">非公開</SelectItem>
                   </SelectContent>
                 </Select>
+                {formData.visibility === 'PUBLIC' && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    学外公開プレイリストには学外公開動画のみ追加できます
+                    {userRole === 'CURATOR' && '（自分の投稿動画から選択）'}
+                  </p>
+                )}
+                {userRole === 'CURATOR' && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    あなたが投稿した動画から選択できます
+                  </p>
+                )}
               </div>
             </div>
 
@@ -305,7 +368,7 @@ export function PlaylistCreateForm({ onSuccess, onCancel }: PlaylistCreateFormPr
                         className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2"
                       >
                         {selectedVideos.map((video, index) => (
-                          <Draggable key={video.id} draggableId={video.id} index={index}>
+                          <Draggable key={video.id} draggableId={video.id.toString()} index={index}>
                             {(provided, snapshot) => (
                               <div
                                 ref={provided.innerRef}

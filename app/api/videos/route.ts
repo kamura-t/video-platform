@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyToken } from '@/lib/auth'
-import { checkPrivateVideoAccess } from '@/lib/ip-access-control'
+import { checkInternalVideoAccess } from '@/lib/auth-access-control'
 import { createSuccessResponse, createErrorResponse, createAuthErrorResponse, createPermissionErrorResponse } from '@/lib/api-response'
 
 export async function GET(request: NextRequest) {
@@ -17,14 +17,15 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || searchParams.get('q')
     const uploader = searchParams.get('uploader')
     const includePrivate = searchParams.get('includePrivate') === 'true'
+    const myVideosOnly = searchParams.get('myVideosOnly') === 'true'
     const random = searchParams.get('random') === 'true'
     
 
 
     let currentUser = null;
 
-    // 管理者用機能（非公開動画を含める）の場合は権限チェック
-    if (includePrivate) {
+    // 管理者用機能（非公開動画を含める）または自分の動画のみ取得の場合は認証チェック
+    if (includePrivate || myVideosOnly) {
       const token = request.cookies.get('auth-token')?.value;
       if (!token) {
         return createAuthErrorResponse();
@@ -52,18 +53,46 @@ export async function GET(request: NextRequest) {
     // Build where clause
     const where: any = {}
 
-    // 投稿者権限による制限：CURATORは自分の動画のみ表示
-    if (currentUser && currentUser.role === 'CURATOR') {
-      where.uploaderId = currentUser.id;
+    // 投稿者権限による制限
+    
+    if (currentUser) {
+      if (currentUser.role === 'CURATOR' && !myVideosOnly) {
+        // CURATORの場合、デフォルトで自分の動画のみ
+        where.uploaderId = currentUser.id;
+      } else if (myVideosOnly) {
+        // myVideosOnlyが明示的に指定された場合は自分の動画のみ
+        where.uploaderId = currentUser.id;
+      } else {
+      }
+      // ADMINの場合、myVideosOnlyが指定されない限り制限なし（全ての動画にアクセス可能）
     }
 
-    // 管理者用の場合は非公開動画も含める、一般用の場合はパブリック動画のみ
-    if (!includePrivate) {
-      // 一般ユーザー向け：IPアドレス制御を事前チェック
-      const hasPrivateAccess = await checkPrivateVideoAccess(request);
+    // 可視性による制限
+    if (myVideosOnly) {
+      // 自分の動画のみ取得の場合：includePrivateの値に応じて制限
+      if (includePrivate) {
+        // 非公開動画も含める（自分の動画なのでDRAFTも含む）
+        where.posts = {
+          some: {
+            visibility: {
+              in: ['PUBLIC', 'PRIVATE', 'DRAFT']
+            }
+          }
+        }
+      } else {
+        // パブリック動画のみ
+        where.posts = {
+          some: {
+            visibility: 'PUBLIC'
+          }
+        }
+      }
+    } else if (!includePrivate) {
+      // 一般ユーザー向け：ログイン状態を事前チェック
+      const hasInternalAccess = await checkInternalVideoAccess(request);
       
-      if (hasPrivateAccess) {
-        // プライベート動画アクセス権限がある場合：パブリック・プライベート動画を取得（非公開は除外）
+      if (hasInternalAccess) {
+        // 学内限定動画アクセス権限がある場合：パブリック・学内限定動画を取得（非公開は除外）
         where.posts = {
           some: {
             visibility: {
@@ -72,7 +101,7 @@ export async function GET(request: NextRequest) {
           }
         }
       } else {
-        // プライベート動画アクセス権限がない場合：パブリック動画のみ
+        // 学内限定動画アクセス権限がない場合：パブリック動画のみ
         where.posts = {
           some: {
             visibility: 'PUBLIC'
@@ -145,7 +174,13 @@ export async function GET(request: NextRequest) {
 
     // ランダム取得の場合
     if (random) {
-      // ランダムソートのためのシード値を使用
+      // PostgreSQLのRANDOM()を使用してデータベースレベルでランダム化
+      orderBy = [
+        { 
+          // Prisma raw queryを使用してRANDOM()でソート
+          // 実装はFisher-Yatesで代替
+        }
+      ]
       orderBy = undefined // ランダムソートは後で処理
     } else if (sortBy && sortOrder && sortBy !== 'createdAt') {
       // 管理者用の新しいソート方式（sortByがcreatedAt以外の場合のみ）
@@ -188,6 +223,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch videos with optimized relations and database-level pagination
+    
     const [videos, totalCount] = await Promise.all([
       prisma.video.findMany({
         where,
@@ -266,10 +302,15 @@ export async function GET(request: NextRequest) {
     if (random) {
       // ランダムソート：Fisher-Yates shuffle アルゴリズムを使用
       const shuffledVideos = [...videos];
-      for (let i = shuffledVideos.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffledVideos[i], shuffledVideos[j]] = [shuffledVideos[j], shuffledVideos[i]];
+      
+      // より強力なランダム化のため複数回シャッフル
+      for (let shuffle = 0; shuffle < 3; shuffle++) {
+        for (let i = shuffledVideos.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffledVideos[i], shuffledVideos[j]] = [shuffledVideos[j], shuffledVideos[i]];
+        }
       }
+      
       paginatedVideos = shuffledVideos;
     }
 

@@ -1,7 +1,7 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { VideoWatchPage } from '@/components/video/video-watch-page'
-import { checkPrivateVideoAccess, getClientIP, isIPInRange } from '@/lib/ip-access-control'
+import { checkInternalVideoAccess } from '@/lib/auth-access-control'
 import { headers } from 'next/headers'
 import React, { useState, useEffect } from 'react';
 
@@ -180,50 +180,8 @@ async function getPost(postId: string) {
       return null
     }
 
-    // プライベート動画の場合、IPアドレス制御をチェック
-    if (post.visibility === 'PRIVATE') {
-      const headersList = await headers()
-      const forwardedFor = headersList.get('x-forwarded-for')
-      const realIp = headersList.get('x-real-ip')
-      
-      // 正確なIPアドレス取得とアクセス制御チェック
-      let clientIP = forwardedFor?.split(',')[0].trim() || realIp || '127.0.0.1';
-      
-      // IPv6のローカルホストを127.0.0.1に変換
-      if (clientIP === '::1') {
-        clientIP = '127.0.0.1';
-      }
-      
-      // システム設定から許可IPレンジを取得してチェック
-      const setting = await prisma.systemSetting.findUnique({
-        where: { settingKey: 'private_video_allowed_ips' }
-      });
-      
-      let hasAccess = false;
-      if (setting?.settingValue) {
-        try {
-          const allowedRanges: string[] = JSON.parse(setting.settingValue);
-          hasAccess = allowedRanges.some(range => {
-            // 正確なCIDRチェックを使用
-            return isIPInRange(clientIP, range);
-          });
-          
-          console.log(`Private video access check: IP=${clientIP}, ranges=${JSON.stringify(allowedRanges)}, hasAccess=${hasAccess}`);
-        } catch (error) {
-          console.error('Failed to parse allowed IP ranges:', error);
-        }
-      } else {
-        console.warn('Private video allowed IPs setting not found or empty');
-      }
-      
-      if (!hasAccess) {
-        // アクセス権限がない場合は、エラー情報を含むオブジェクトを返す
-        return {
-          ...post,
-          accessError: 'この動画は組織内ネットワークからのみアクセス可能です'
-        }
-      }
-    }
+    // 学内限定動画のアクセス権限チェック情報を返す
+    // リダイレクトはコンポーネントレベルで処理する
 
     // 視聴ログの作成（動画またはプレイリストの場合）
     if (post.postType === 'VIDEO' && post.video) {
@@ -263,7 +221,6 @@ async function getPost(postId: string) {
             }
           })
           
-          console.log(`視聴ログを作成: videoId=${post.video.id}, sessionId=${sessionId}`)
         }
       } catch (viewLogError) {
         console.error('視聴ログ作成エラー:', viewLogError)
@@ -309,7 +266,6 @@ async function getPost(postId: string) {
             }
           })
           
-          console.log(`プレイリスト視聴ログを作成: videoId=${firstVideo.id}, sessionId=${sessionId}`)
         }
       } catch (viewLogError) {
         console.error('プレイリスト視聴ログ作成エラー:', viewLogError)
@@ -365,6 +321,14 @@ export default async function WatchPage({ params }: PageProps) {
 
   if (!post) {
     notFound()
+  }
+
+  // 学内限定動画の場合、ログイン状態をチェック
+  if (post.visibility === 'PRIVATE') {
+    const hasAccess = await checkInternalVideoAccess()
+    if (!hasAccess) {
+      redirect('/login?reason=private_video')
+    }
   }
 
   return <VideoWatchPage post={post} />

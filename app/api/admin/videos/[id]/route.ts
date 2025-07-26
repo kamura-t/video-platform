@@ -39,16 +39,32 @@ export async function DELETE(
     const resolvedParams = await params;
     const videoId = resolvedParams.id;
 
-    // 動画の存在確認
-    const video = await prisma.video.findUnique({
-      where: { videoId },
-      include: {
-        posts: true,
-        categories: true,
-        tags: true,
-        playlistVideos: true
-      }
-    });
+    // 動画の存在確認（数値IDと文字列videoIdの両方をサポート）
+    let video = null;
+    const numericId = parseInt(videoId);
+    if (!isNaN(numericId)) {
+      video = await prisma.video.findUnique({
+        where: { id: numericId },
+        include: {
+          posts: true,
+          categories: true,
+          tags: true,
+          playlistVideos: true
+        }
+      });
+    }
+    
+    if (!video) {
+      video = await prisma.video.findUnique({
+        where: { videoId: videoId.toString() },
+        include: {
+          posts: true,
+          categories: true,
+          tags: true,
+          playlistVideos: true
+        }
+      });
+    }
 
     if (!video) {
       return NextResponse.json({ error: '動画が見つかりません' }, { status: 404 });
@@ -116,9 +132,9 @@ export async function DELETE(
         where: { videoId: video.id }
       });
 
-      // 動画を削除（videoIdを使用）
+      // 動画を削除（idを使用）
       await tx.video.delete({
-        where: { videoId }
+        where: { id: video.id }
       });
     });
 
@@ -134,7 +150,7 @@ export async function DELETE(
 
     return NextResponse.json({ 
       message: '動画を削除しました',
-      deletedVideoId: videoId,
+      deletedVideoId: video.videoId,
       deletedFiles: deletedFiles
     });
 
@@ -154,10 +170,13 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const videoId = resolvedParams.id;
+    
+    console.log('GET /api/admin/videos/[id] - Video ID requested:', videoId);
 
     // 認証チェック
     const token = request.cookies.get('auth-token')?.value;
     if (!token) {
+      console.log('No auth token found');
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
@@ -182,54 +201,129 @@ export async function GET(
     }
 
     // 動画詳細取得
-    const video = await prisma.video.findUnique({
-      where: { videoId },
-      include: {
-        uploader: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            profileImageUrl: true
-          }
-        },
-        categories: {
-          include: {
-            category: true
-          }
-        },
-        tags: {
-          include: {
-            tag: true
-          }
-        },
-        posts: {
-          select: {
-            postId: true,
-            title: true,
-            visibility: true,
-            scheduledPublishAt: true,
-            scheduledUnpublishAt: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        },
-        transcodeJobs: {
-          orderBy: {
-            createdAt: 'desc'
+    console.log('Searching for video with videoId:', videoId, 'type:', typeof videoId);
+    
+    // videoIdが数値の場合は、まずidフィールドで検索し、見つからない場合はvideoIdで検索
+    let video = null;
+    
+    // URLパラメータが数値の場合、まずidフィールド（数値）で検索
+    const numericId = parseInt(videoId);
+    if (!isNaN(numericId)) {
+      console.log('Trying to find video by numeric id:', numericId);
+      video = await prisma.video.findUnique({
+        where: { id: numericId },
+        include: {
+          uploader: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              profileImageUrl: true
+            }
           },
-          take: 1,
-          select: {
-            jobId: true,
-            status: true,
-            completedAt: true
+          categories: {
+            include: {
+              category: true
+            }
+          },
+          tags: {
+            include: {
+              tag: true
+            }
+          },
+          posts: {
+            select: {
+              postId: true,
+              title: true,
+              visibility: true,
+              scheduledPublishAt: true,
+              scheduledUnpublishAt: true,
+              createdAt: true,
+              updatedAt: true
+            }
+          },
+          transcodeJobs: {
+            orderBy: {
+              createdAt: 'desc'
+            },
+            take: 1,
+            select: {
+              jobId: true,
+              status: true,
+              completedAt: true
+            }
           }
         }
-      }
-    });
+      });
+    }
+    
+    // 数値検索で見つからなかった場合、またはvideoIdが文字列の場合はvideoIdで検索
+    if (!video) {
+      console.log('Trying to find video by videoId string:', videoId);
+      video = await prisma.video.findUnique({
+        where: { videoId: videoId.toString() },
+        include: {
+          uploader: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              profileImageUrl: true
+            }
+          },
+          categories: {
+            include: {
+              category: true
+            }
+          },
+          tags: {
+            include: {
+              tag: true
+            }
+          },
+          posts: {
+            select: {
+              postId: true,
+              title: true,
+              visibility: true,
+              scheduledPublishAt: true,
+              scheduledUnpublishAt: true,
+              createdAt: true,
+              updatedAt: true
+            }
+          },
+          transcodeJobs: {
+            orderBy: {
+              createdAt: 'desc'
+            },
+            take: 1,
+            select: {
+              jobId: true,
+              status: true,
+              completedAt: true
+            }
+          }
+        }
+      });
+    }
 
     if (!video) {
-      return NextResponse.json({ error: '動画が見つかりません' }, { status: 404 });
+      console.log('Video not found with videoId:', videoId);
+      
+      // デバッグ用：どんな動画が存在するかを確認
+      const allVideos = await prisma.video.findMany({
+        select: { videoId: true, title: true },
+        take: 10
+      });
+      console.log('Available videos in database:', allVideos.map(v => ({ videoId: v.videoId, title: v.title })));
+      
+      return NextResponse.json({ 
+        error: '動画が見つかりません',
+        debug: {
+          searchedVideoId: videoId,
+          availableVideos: allVideos.map(v => v.videoId)
+        }
+      }, { status: 404 });
     }
 
     // 投稿者権限チェック：CURATORは自分の動画のみ取得可能
@@ -342,14 +436,28 @@ export async function PUT(
       ({ title, description, youtubeUrl, categories, tags } = body);
     }
 
-    // 動画の存在確認
-    const video = await prisma.video.findUnique({
-      where: { videoId },
-      include: {
-        categories: true,
-        tags: true
-      }
-    });
+    // 動画の存在確認（数値IDと文字列videoIdの両方をサポート）
+    let video = null;
+    const numericId = parseInt(videoId);
+    if (!isNaN(numericId)) {
+      video = await prisma.video.findUnique({
+        where: { id: numericId },
+        include: {
+          categories: true,
+          tags: true
+        }
+      });
+    }
+    
+    if (!video) {
+      video = await prisma.video.findUnique({
+        where: { videoId: videoId.toString() },
+        include: {
+          categories: true,
+          tags: true
+        }
+      });
+    }
 
     if (!video) {
       return NextResponse.json({ error: '動画が見つかりません' }, { status: 404 });
@@ -426,7 +534,7 @@ export async function PUT(
     await prisma.$transaction(async (tx: any) => {
       // 動画情報更新
       await tx.video.update({
-        where: { videoId },
+        where: { id: video.id },
         data: {
           title,
           description,
@@ -495,7 +603,7 @@ export async function PUT(
 
     return NextResponse.json({ 
       message: '動画を更新しました',
-      videoId,
+      videoId: video.videoId,
       thumbnailUrl: newThumbnailUrl,
       compressionInfo
     });

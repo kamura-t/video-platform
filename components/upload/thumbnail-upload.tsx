@@ -13,7 +13,8 @@ import {
   AlertCircle, 
   CheckCircle, 
   Zap,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { validationService } from '@/lib/validation-service';
 
@@ -30,6 +31,7 @@ interface ThumbnailUploadProps {
   videoId?: string;
   id?: string;
   currentThumbnailUrl?: string;
+  onThumbnailDeleted?: () => void;
 }
 
 export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
@@ -39,6 +41,7 @@ export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
   videoId,
   id,
   currentThumbnailUrl,
+  onThumbnailDeleted,
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
@@ -46,12 +49,14 @@ export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
   const [uploadWarnings, setUploadWarnings] = useState<string[]>([]);
   const [showOptimizationInfo, setShowOptimizationInfo] = useState(false);
   const [validationConfig, setValidationConfig] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // 設定を取得
+  // 設定を取得（コンポーネントがマウントされるたびに最新の設定を取得）
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         const config = await validationService.getValidationConfig();
+        console.log('🎬 ThumbnailUpload設定取得:', config);
         setValidationConfig(config);
       } catch (error) {
         console.error('Failed to fetch validation config:', error);
@@ -59,7 +64,7 @@ export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
     };
 
     fetchConfig();
-  }, []);
+  }, [videoId]); // videoIdが変わった時も再取得
 
   const onDrop = useCallback(async (acceptedFiles: File[], rejectedFiles: any[]) => {
     setUploadError('');
@@ -126,13 +131,91 @@ export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
     }
   };
 
+  const handleDeleteThumbnail = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!videoId) {
+      setUploadError('動画IDが指定されていません');
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      setUploadError('');
+
+      const response = await fetch(`/api/admin/videos/${videoId}/delete-thumbnail`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'サムネイルの削除に失敗しました');
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // 成功時のコールバック呼び出し
+        if (onThumbnailDeleted) {
+          onThumbnailDeleted();
+        }
+        
+        // ローカル状態をクリア
+        removeImage();
+      } else {
+        throw new Error(result.error || 'サムネイルの削除に失敗しました');
+      }
+    } catch (error) {
+      console.error('Thumbnail deletion error:', error);
+      setUploadError(error instanceof Error ? error.message : 'サムネイルの削除に失敗しました');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
 
 
   const formatFileSize = (bytes: number) => validationService.formatFileSize(bytes);
 
   return (
     <div className="space-y-4">
-
+      {/* 現在のサムネイル表示と削除ボタン（ドロップゾーンの外） */}
+      {currentThumbnailUrl && (
+        <div className="mb-4">
+          <div className="flex flex-col items-center">
+            <div className="relative inline-block">
+              <img
+                src={`${currentThumbnailUrl}?t=${Date.now()}`}
+                alt="現在のサムネイル"
+                className="w-48 h-32 object-cover rounded-lg border border-gray-200"
+                key={currentThumbnailUrl} // URLが変更されたときに再レンダリング
+              />
+              <div className="absolute inset-0 bg-black/20 rounded-lg flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                <span className="text-white text-xs font-medium">現在のサムネイル</span>
+              </div>
+            </div>
+            
+            {/* 削除ボタン（ドロップゾーンの外に配置） */}
+            {videoId && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteThumbnail}
+                disabled={isDeleting}
+                className="mt-2 flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                {isDeleting ? '削除中...' : 'サムネイルを削除'}
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            新しい画像をアップロードすると置き換わります<br/>(推奨サイズ1280x720px)
+          </p>
+        </div>
+      )}
 
       {!selectedImage ? (
         <Card
@@ -146,28 +229,6 @@ export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
           <CardContent className="flex flex-col items-center justify-center py-8 px-6">
             <input {...getInputProps()} />
             
-            {/* 現在のサムネイル表示 */}
-            {currentThumbnailUrl && (
-              <div className="mb-4">
-                <div className="flex justify-center">
-                  <div className="relative inline-block">
-                    <img
-                      src={`${currentThumbnailUrl}?t=${Date.now()}`}
-                      alt="現在のサムネイル"
-                      className="w-48 h-32 object-cover rounded-lg border border-gray-200"
-                      key={currentThumbnailUrl} // URLが変更されたときに再レンダリング
-                    />
-                    <div className="absolute inset-0 bg-black/20 rounded-lg flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                      <span className="text-white text-xs font-medium">現在のサムネイル</span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2 text-center">
-                  新しい画像をアップロードすると置き換わります
-                </p>
-              </div>
-            )}
-            
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
               <ImageIcon className="w-6 h-6 text-primary" />
             </div>
@@ -180,7 +241,7 @@ export const ThumbnailUpload: React.FC<ThumbnailUploadProps> = ({
                 ドラッグ&ドロップまたはクリックして選択
               </p>
               <p className="text-xs text-muted-foreground">
-                {validationConfig?.image?.allowedExtensions?.join('、') || 'JPEG、PNG、WebP、GIF'}
+                {validationConfig?.image?.allowedExtensions?.join('、') || 'JPEG、PNG、WebP'}
                 （最大{validationConfig?.image?.maxSizeMB || 10}MB）
               </p>
             </div>

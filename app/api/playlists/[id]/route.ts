@@ -222,27 +222,46 @@ export async function PUT(
         )
       }
 
+      // Separate numeric IDs and string videoIds
+      const numericIds: number[] = []
+      const stringVideoIds: string[] = []
+      
+      videoIds.forEach(id => {
+        if (typeof id === 'number') {
+          numericIds.push(id)
+        } else if (typeof id === 'string') {
+          const parsed = parseInt(id, 10)
+          if (!isNaN(parsed)) {
+            numericIds.push(parsed)
+          } else {
+            stringVideoIds.push(id)
+          }
+        }
+      })
+
       videos = await prisma.video.findMany({
         where: {
-          videoId: {
-            in: videoIds
-          },
+          OR: [
+            ...(numericIds.length > 0 ? [{
+              id: {
+                in: numericIds
+              }
+            }] : []),
+            ...(stringVideoIds.length > 0 ? [{
+              videoId: {
+                in: stringVideoIds
+              }
+            }] : [])
+          ],
           posts: {
             some: {
               visibility: {
-                in: ['PUBLIC', 'PRIVATE']
+                in: ['PUBLIC', 'PRIVATE', 'DRAFT']
               }
             }
           }
         }
       })
-
-      if (videos.length !== videoIds.length) {
-        return NextResponse.json(
-          { success: false, error: '選択された動画の一部が見つからないか、非公開です' },
-          { status: 400 }
-        )
-      }
 
       // 合計再生時間を再計算
       totalDuration = videos.reduce((sum, video) => sum + (video.duration || 0), 0)
@@ -274,15 +293,31 @@ export async function PUT(
           where: { playlistId: playlist.id }
         })
 
-        // 新しい動画関連を作成
-        for (let i = 0; i < videos.length; i++) {
-          await tx.playlistVideo.create({
-            data: {
-              playlistId: playlist.id,
-              videoId: videos[i].id,
-              sortOrder: i + 1
+        // 新しい動画関連を作成（元の順序を保持）
+        for (let i = 0; i < videoIds.length; i++) {
+          const videoId = videoIds[i]
+          let video
+          
+          if (typeof videoId === 'number') {
+            video = videos.find(v => v.id === videoId)
+          } else if (typeof videoId === 'string') {
+            const parsed = parseInt(videoId, 10)
+            if (!isNaN(parsed)) {
+              video = videos.find(v => v.id === parsed)
+            } else {
+              video = videos.find(v => v.videoId === videoId)
             }
-          })
+          }
+          
+          if (video) {
+            await tx.playlistVideo.create({
+              data: {
+                playlistId: playlist.id,
+                videoId: video.id,
+                sortOrder: i + 1
+              }
+            })
+          }
         }
       }
 

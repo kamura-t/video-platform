@@ -346,6 +346,12 @@ export default function AdminDashboard() {
                     </Link>
                   </Button>
                   <Button variant="outline" className="w-full" asChild>
+                    <Link href="/admin/analytics/advanced">
+                      <BarChart3 className="w-4 h-4 mr-2" />
+                      高度な分析・インサイト
+                    </Link>
+                  </Button>
+                  <Button variant="outline" className="w-full" asChild>
                     <Link href="/admin/reports">
                       レポート生成
                     </Link>

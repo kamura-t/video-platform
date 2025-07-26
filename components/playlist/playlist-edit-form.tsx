@@ -38,6 +38,10 @@ interface Video {
     avatar?: string
   }
   uploadedAt: string
+  visibility?: string
+  posts?: Array<{
+    visibility: string
+  }>
 }
 
 interface PlaylistData {
@@ -72,7 +76,9 @@ const normalizeVideoData = (video: any): Video => ({
     name: video.author?.name || video.uploader?.displayName || video.uploader?.username,
     avatar: video.author?.avatar || video.uploader?.profileImageUrl
   },
-  uploadedAt: video.uploadedAt || video.createdAt
+  uploadedAt: video.uploadedAt || video.createdAt,
+  visibility: video.visibility,
+  posts: video.posts
 })
 
 export function PlaylistEditForm({ playlist, onSuccess, onCancel }: PlaylistEditFormProps) {
@@ -117,7 +123,20 @@ export function PlaylistEditForm({ playlist, onSuccess, onCancel }: PlaylistEdit
       if (result.success) {
         const videos = result.data?.videos || result.videos || []
         const normalizedVideos = videos.map(normalizeVideoData)
-        setAvailableVideos(normalizedVideos)
+        
+        // 公開設定に基づいてフィルタリング
+        const filteredVideos = normalizedVideos.filter((video: any) => {
+          const videoVisibility = video.posts?.[0]?.visibility || video.visibility || 'PRIVATE'
+          
+          // 学外公開の場合、PRIVATE動画は選択不可
+          if (formData.visibility === 'PUBLIC' && videoVisibility === 'PRIVATE') {
+            return false
+          }
+          
+          return true
+        })
+        
+        setAvailableVideos(filteredVideos)
       } else {
         setError(result.error || '動画の取得に失敗しました')
       }
@@ -127,7 +146,7 @@ export function PlaylistEditForm({ playlist, onSuccess, onCancel }: PlaylistEdit
     } finally {
       setIsSearching(false)
     }
-  }, [])
+  }, [formData.visibility])
 
   // 初回読み込み
   useEffect(() => {
@@ -146,6 +165,22 @@ export function PlaylistEditForm({ playlist, onSuccess, onCancel }: PlaylistEdit
 
     return () => clearTimeout(timeoutId)
   }, [searchQuery, fetchVideos])
+
+  // 公開設定変更時の処理
+  useEffect(() => {
+    // 公開設定が変更された時に動画リストを再取得
+    fetchVideos(searchQuery || undefined)
+    
+    // 選択済み動画の中にPRIVATE動画があり、新しい設定がPUBLICの場合は削除
+    if (formData.visibility === 'PUBLIC') {
+      setSelectedVideos(prev => 
+        prev.filter(video => {
+          const videoVisibility = video.posts?.[0]?.visibility || video.visibility || 'PRIVATE'
+          return videoVisibility !== 'PRIVATE'
+        })
+      )
+    }
+  }, [formData.visibility, fetchVideos, searchQuery])
 
   // 動画を選択に追加
   const addVideo = useCallback((video: Video) => {
@@ -316,10 +351,10 @@ export function PlaylistEditForm({ playlist, onSuccess, onCancel }: PlaylistEdit
                       <div
                         {...provided.droppableProps}
                         ref={provided.innerRef}
-                        className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2"
+                        className="space-y-2 max-h-75 overflow-y-auto border rounded-lg p-2"
                       >
                         {selectedVideos.map((video, index) => (
-                          <Draggable key={video.id} draggableId={video.id} index={index}>
+                          <Draggable key={video.id} draggableId={video.id.toString()} index={index}>
                             {(provided, snapshot) => (
                               <div
                                 ref={provided.innerRef}
@@ -430,6 +465,15 @@ export function PlaylistEditForm({ playlist, onSuccess, onCancel }: PlaylistEdit
                               <span>{formatDuration(video.duration)}</span>
                               <span>•</span>
                               <span>{video.author.name}</span>
+                              {(() => {
+                                const videoVisibility = video.posts?.[0]?.visibility || video.visibility || 'PRIVATE'
+                                return videoVisibility === 'PRIVATE' ? (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-orange-600 font-medium">学内限定</span>
+                                  </>
+                                ) : null
+                              })()}
                             </div>
                           </div>
                         </div>

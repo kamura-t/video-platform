@@ -17,7 +17,7 @@ export interface UploadData {
   description: string;
   categories: string[]; // カテゴリのスラッグを格納
   tags: string[];
-  visibility: 'PUBLIC' | 'PRIVATE' | 'RESTRICTED';
+  visibility: 'PUBLIC' | 'PRIVATE' | 'DRAFT';
   file?: File;
   youtubeUrl?: string;
   uploadMethod: 'file' | 'youtube';

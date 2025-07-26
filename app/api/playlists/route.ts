@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyToken } from '@/lib/auth'
+import { Visibility } from '@prisma/client'
 
 // プレイリスト一覧取得
 export async function GET(request: NextRequest) {
   try {
+    // 認証チェック
+    const token = request.cookies.get('auth-token')?.value
+    const currentUser = token ? verifyToken(token) : null
+    
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
@@ -17,9 +22,11 @@ export async function GET(request: NextRequest) {
     // 検索条件を構築
     const where: any = {}
 
-    // 作成者フィルター
+    // 作成者フィルター - CURATORロールは自分のプレイリストのみ
     if (creatorId) {
       where.creatorId = parseInt(creatorId)
+    } else if (currentUser?.role === 'CURATOR') {
+      where.creatorId = parseInt(currentUser.userId)
     }
 
     // 検索フィルター
@@ -164,14 +171,23 @@ export async function POST(request: NextRequest) {
     }
 
     const currentUser = verifyToken(token)
-    if (!currentUser || !['ADMIN', 'CURATOR'].includes(currentUser.role)) {
+    
+    if (!currentUser) {
+      return NextResponse.json(
+        { success: false, error: '認証トークンが無効です' },
+        { status: 401 }
+      )
+    }
+    
+    if (!['ADMIN', 'CURATOR'].includes(currentUser.role)) {
       return NextResponse.json(
         { success: false, error: '管理者またはキュレーター権限が必要です' },
         { status: 403 }
       )
     }
 
-    const { title, description, videoIds, visibility = 'PUBLIC' } = await request.json()
+    const requestBody = await request.json()
+    const { title, description, videoIds, visibility = 'PUBLIC' } = requestBody
 
     // 入力検証
     if (!title || !title.trim()) {
@@ -200,16 +216,19 @@ export async function POST(request: NextRequest) {
     ).join('')
 
     // 選択された動画の存在確認と権限チェック
+    // 学外公開プレイリストの場合は学内者限定動画を除外
+    const allowedVisibility: Visibility[] = visibility === 'PUBLIC' ? [Visibility.PUBLIC] : [Visibility.PUBLIC, Visibility.PRIVATE]
+
     const videos = await prisma.video.findMany({
       where: {
-        videoId: {
-          in: videoIds
+        id: {
+          in: videoIds.map(Number)
         },
-        // 公開済みの動画のみ選択可能
+        // プレイリストの公開設定に応じて動画の可視性を制限
         posts: {
           some: {
             visibility: {
-              in: ['PUBLIC', 'PRIVATE']
+              in: allowedVisibility
             }
           }
         }
@@ -220,13 +239,22 @@ export async function POST(request: NextRequest) {
             id: true,
             displayName: true
           }
+        },
+        posts: {
+          select: {
+            visibility: true
+          }
         }
       }
-    })
+    });
 
     if (videos.length !== videoIds.length) {
+      const errorMessage = visibility === 'PUBLIC' 
+        ? '選択された動画の一部が見つからないか、学外公開プレイリストには学内者限定動画は追加できません'
+        : '選択された動画の一部が見つからないか、非公開です'
+      
       return NextResponse.json(
-        { success: false, error: '選択された動画の一部が見つからないか、非公開です' },
+        { success: false, error: errorMessage },
         { status: 400 }
       )
     }
@@ -271,9 +299,9 @@ export async function POST(request: NextRequest) {
           description: description?.trim() || null,
           postType: 'PLAYLIST',
           playlistId: playlist.id,
-          visibility: visibility.toUpperCase() as any,
+          visibility: visibility === 'PUBLIC' ? Visibility.PUBLIC : visibility === 'PRIVATE' ? Visibility.PRIVATE : Visibility.DRAFT,
           creatorId: parseInt(currentUser.userId),
-          publishedAt: visibility.toUpperCase() !== 'DRAFT' ? new Date() : null
+          publishedAt: visibility !== 'DRAFT' ? new Date() : null
         }
       })
 
@@ -301,7 +329,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Playlist Creation Error:', error)
     return NextResponse.json(
-      { success: false, error: 'プレイリストの作成に失敗しました' },
+      { 
+        success: false, 
+        error: 'プレイリストの作成に失敗しました'
+      },
       { status: 500 }
     )
   }

@@ -210,6 +210,20 @@ async function main() {
       description: '視聴履歴クリーンアップ一回あたりの処理件数',
       isActive: true,
     },
+    {
+      settingKey: 'thumbnail_format',
+      settingValue: 'jpg',
+      settingType: 'STRING' as const,
+      description: 'サムネイル生成形式（jpg または webp）',
+      isActive: true,
+    },
+    {
+      settingKey: 'thumbnail_quality',
+      settingValue: '95',
+      settingType: 'INTEGER' as const,
+      description: 'サムネイル生成品質（1-100）',
+      isActive: true,
+    },
   ]
 
   for (const setting of systemSettings) {

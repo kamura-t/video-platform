@@ -491,19 +491,6 @@ export default function AdminVideosPage() {
                                       video.author?.id === user?.id.toString() ||
                                       video.author?.id === user?.id;
                         
-                        // デバッグ情報（開発環境のみ）
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log('権限チェック:', {
-                            videoId: video.id,
-                            userRole: user?.role,
-                            userId: user?.id,
-                            uploaderId: video.uploader?.id,
-                            authorId: video.author?.id,
-                            isAdmin,
-                            isOwner,
-                            showButtons: isAdmin || isOwner
-                          });
-                        }
                         
                         return isAdmin || isOwner;
                       })() && (

@@ -115,12 +115,14 @@ export async function POST(
       }
     })
 
-    // 認証ユーザーの場合、ViewHistoryも更新
+    // 認証ユーザーの場合、ViewHistory（サマリー）とDailyViewHistory（詳細）を更新
     if (currentUser && currentUser.userId) {
       try {
         const userId = parseInt(currentUser.userId)
+        const now = new Date()
+        const today = new Date(now.toDateString()) // 今日の日付（00:00:00）
         
-        // 既存のViewHistoryレコードを確認
+        // ViewHistory（サマリー）の更新
         const existingViewHistory = await prisma.viewHistory.findUnique({
           where: {
             userId_videoId: {
@@ -139,7 +141,7 @@ export async function POST(
               completionRate: existingViewHistory.completionRate 
                 ? Math.max(parseFloat(existingViewHistory.completionRate.toString()), completionRate)
                 : completionRate,
-              lastWatchedAt: new Date()
+              lastWatchedAt: now
             }
           })
           
@@ -152,12 +154,61 @@ export async function POST(
               videoId: video.id,
               watchDuration: watchDuration,
               completionRate: completionRate,
-              lastWatchedAt: new Date()
+              lastWatchedAt: now
             }
           })
           
           console.log(`ViewHistory作成: userId=${userId}, videoId=${video.id}`)
         }
+
+        // DailyViewHistory（日付単位の詳細履歴）の更新
+        const existingDailyHistory = await prisma.dailyViewHistory.findUnique({
+          where: {
+            userId_videoId_viewDate: {
+              userId: userId,
+              videoId: video.id,
+              viewDate: today
+            }
+          }
+        })
+
+        if (existingDailyHistory) {
+          // 今日の履歴を更新（より長い視聴時間、より高い完了率、セッション数を増加）
+          await prisma.dailyViewHistory.update({
+            where: { id: existingDailyHistory.id },
+            data: {
+              watchDuration: Math.max(existingDailyHistory.watchDuration || 0, watchDuration),
+              completionRate: existingDailyHistory.completionRate 
+                ? Math.max(parseFloat(existingDailyHistory.completionRate.toString()), completionRate)
+                : completionRate,
+              sessionCount: existingDailyHistory.sessionCount + 1,
+              viewTime: now, // 最新の視聴時刻を更新
+              userAgent: userAgent || existingDailyHistory.userAgent,
+              referrer: headersList.get('referer') || existingDailyHistory.referrer
+            }
+          })
+          
+          console.log(`DailyViewHistory更新: userId=${userId}, videoId=${video.id}, date=${today.toDateString()}`)
+        } else {
+          // 今日の新規履歴を作成
+          await prisma.dailyViewHistory.create({
+            data: {
+              userId: userId,
+              videoId: video.id,
+              viewDate: today,
+              viewTime: now,
+              watchDuration: watchDuration,
+              completionRate: completionRate,
+              sessionCount: 1,
+              deviceType: null, // 必要に応じてUser-Agentから判定
+              referrer: headersList.get('referer') || null,
+              userAgent: userAgent || null
+            }
+          })
+          
+          console.log(`DailyViewHistory作成: userId=${userId}, videoId=${video.id}, date=${today.toDateString()}`)
+        }
+
       } catch (error) {
         // ViewHistory更新エラーは視聴進捗更新に影響しないよう警告のみ
         console.warn('ViewHistory更新エラー:', error)

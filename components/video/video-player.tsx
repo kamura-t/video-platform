@@ -19,7 +19,7 @@ export interface VideoPlayerRef {
   seekTo: (seconds: number) => void;
 }
 
-export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video, onVideoEnd, className, style }, ref) => {
+export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function VideoPlayer({ video, onVideoEnd, className, style }, ref) {
   const playerRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(true); // 自動再生のためtrueに変更
   const [volume, setVolume] = useState(0.5); // デフォルトボリューム50%
@@ -105,14 +105,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
   useEffect(() => {
     try {
       const savedVolume = localStorage.getItem('video-player-volume');
-      console.log('🔊 localStorage読み込み:', savedVolume);
       if (savedVolume) {
         const parsedVolume = parseFloat(savedVolume);
         const validatedVolume = validateVolume(parsedVolume);
-        console.log('🔊 復元されたボリューム:', validatedVolume);
         setVolume(validatedVolume);
       } else {
-        console.log('🔊 保存されたボリューム設定なし、デフォルト値使用');
       }
     } catch (error) {
       console.warn('ボリューム設定の読み込みに失敗:', error);
@@ -122,13 +119,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
 
   // ボリューム変更時の処理
   const handleVolumeChange = (newVolume: number) => {
-    console.log('🔊 ボリューム変更:', newVolume);
     const validatedVolume = validateVolume(newVolume);
-    console.log('🔊 検証後のボリューム:', validatedVolume);
     setVolume(validatedVolume);
     try {
       localStorage.setItem('video-player-volume', validatedVolume.toString());
-      console.log('🔊 localStorage保存完了:', validatedVolume);
     } catch (error) {
       console.warn('ボリューム設定の保存に失敗:', error);
     }
@@ -172,7 +166,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
         return
       }
       
-      console.log('視聴進捗を報告:', { videoId, watchDuration, completionRate });
       
       const response = await fetch(`/api/videos/${videoId}/view-progress`, {
         method: 'POST',
@@ -188,7 +181,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
       if (response.ok) {
         const result = await response.json();
         if (result.data.viewCountUpdated) {
-          console.log('視聴回数が更新されました');
         }
       } else {
         console.error('視聴進捗の報告に失敗:', response.status, response.statusText);
@@ -200,7 +192,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
 
   // 動画再生開始時の処理
   const handlePlay = () => {
-    console.log('▶️ 動画再生開始');
     setIsPlaying(true);
     if (watchStartTime === null) {
       setWatchStartTime(Date.now());
@@ -209,7 +200,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
 
   // 動画一時停止時の処理
   const handlePause = () => {
-    console.log('⏸️ 動画一時停止');
     setIsPlaying(false);
     if (watchStartTime !== null) {
       const sessionWatchTime = (Date.now() - watchStartTime) / 1000;
@@ -286,7 +276,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
 
   // 動画準備完了時の処理
   const handleReady = () => {
-    console.log('✅ 動画準備完了');
     
     // HTML5 videoエレメントに直接volumechangeイベントを追加
     if (playerRef.current && playerRef.current.getInternalPlayer) {
@@ -294,7 +283,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ video
       if (internalPlayer && internalPlayer.addEventListener) {
         internalPlayer.addEventListener('volumechange', () => {
           const currentVolume = internalPlayer.volume;
-          console.log('🔊 HTML5 volumechange:', currentVolume);
           handleVolumeChange(currentVolume);
         });
       }

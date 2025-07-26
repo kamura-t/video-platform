@@ -155,6 +155,21 @@ export default function SystemSettingsPage() {
         }
       }
 
+      // サムネイル設定のバリデーション
+      if (settings.thumbnail_format?.value) {
+        const format = settings.thumbnail_format.value
+        if (format !== 'jpg' && format !== 'webp') {
+          validationErrors.push('サムネイル形式はjpgまたはwebpを選択してください')
+        }
+      }
+      
+      if (settings.thumbnail_quality?.value) {
+        const quality = parseInt(settings.thumbnail_quality.value)
+        if (isNaN(quality) || quality < 1 || quality > 100) {
+          validationErrors.push('サムネイル品質は1〜100の範囲で入力してください')
+        }
+      }
+
       // URL設定のバリデーション
       const urlSettings = ['gpu_server_url']
       urlSettings.forEach(key => {
@@ -758,6 +773,64 @@ export default function SystemSettingsPage() {
                       GPU変換機能有効化
                     </Label>
                   </div>
+
+                  <Separator />
+
+                  <div>
+                    <Label className="text-sm font-medium mb-3 block">サムネイル生成設定</Label>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="thumbnail_format" className="text-sm font-medium">
+                          サムネイル形式
+                        </Label>
+                        <select
+                          id="thumbnail_format"
+                          value={settings.thumbnail_format?.value || 'jpg'}
+                          onChange={(e) => updateSetting('thumbnail_format', e.target.value)}
+                          className="mt-1 block w-full px-3 py-2 border border-input bg-background text-sm rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                        >
+                          <option value="jpg">JPEG (.jpg)</option>
+                          <option value="webp">WebP (.webp)</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          JPEG: 互換性が高い、WebP: ファイルサイズが小さい
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="thumbnail_quality" className="text-sm font-medium">
+                          サムネイル品質
+                        </Label>
+                        <Input
+                          id="thumbnail_quality"
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={settings.thumbnail_quality?.value || '95'}
+                          onChange={(e) => updateSetting('thumbnail_quality', e.target.value)}
+                          placeholder="95"
+                          className="mt-1"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          1-100の範囲で指定（推奨: 85-95）
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mt-4">
+                      <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+                        🖼️ 現在のサムネイル設定
+                      </h4>
+                      <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
+                        <p>• 形式: {settings.thumbnail_format?.value === 'webp' ? 'WebP (.webp)' : 'JPEG (.jpg)'}</p>
+                        <p>• 品質: {settings.thumbnail_quality?.value || '95'}</p>
+                        <p className="text-xs mt-2">
+                          ※ 新規動画アップロード時に適用されます
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -800,7 +873,7 @@ export default function SystemSettingsPage() {
                     />
                     <p className="text-xs text-muted-foreground mt-1">
                       学内限定動画にアクセス可能なIPアドレスまたはCIDR範囲をJSON配列形式で入力してください。<br />
-                      例: ["192.168.1.0/24", "10.0.0.0/8", "172.16.0.0/12", "192.168.10.64"]
+                      例: [&quot;192.168.1.0/24&quot;, &quot;10.0.0.0/8&quot;, &quot;172.16.0.0/12&quot;, &quot;192.168.10.64&quot;]
                     </p>
                   </div>
                 </div>

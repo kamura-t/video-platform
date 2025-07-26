@@ -98,8 +98,6 @@ export const VideoCard: React.FC<VideoCardProps> = ({
     e.preventDefault();
     e.stopPropagation();
     
-    console.log('VideoCard handleFavoriteClick - video:', video);
-    console.log('VideoCard handleFavoriteClick - video.id:', video.id, 'type:', typeof video.id);
     
     if (!user) {
       router.push('/login');

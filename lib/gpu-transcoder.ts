@@ -165,6 +165,11 @@ export interface TranscodeMetadata {
   originalFilename?: string;
   generateThumbnail?: boolean;
   thumbnailTimestamp?: number;
+  thumbnailFormat?: 'jpg' | 'webp';
+  thumbnailQuality?: number;
+  thumbnailSize?: string;
+  thumbnailWidth?: number;
+  thumbnailHeight?: number;
   [key: string]: any;
 }
 
@@ -228,53 +233,6 @@ export class GPUTranscoderClient {
     throw new GPUTranscoderError(errorMessage, error.response?.status, error);
   }
 
-  // FormData作成の共通処理
-  private createFormData(
-    file: File | Buffer,
-    preset: string,
-    outputPath?: string,
-    metadata?: TranscodeMetadata
-  ): FormData {
-    const formData = new FormData();
-    
-    if (file instanceof File) {
-      formData.append('video', file);
-    } else {
-      // Node.js環境でのBuffer処理
-      const { Readable } = require('stream');
-      
-      // BufferをStreamに変換
-      const stream = Readable.from(file);
-      formData.append('video', stream, metadata?.originalFilename || 'video.mp4');
-    }
-    
-    formData.append('preset', preset);
-    
-    if (outputPath) {
-      formData.append('outputPath', outputPath);
-    }
-
-    // サムネイル生成オプション
-    if (metadata?.generateThumbnail !== false) {
-      formData.append('generateThumbnail', 'true');
-      formData.append('thumbnailTimestamp', (metadata?.thumbnailTimestamp || 5).toString());
-      formData.append('thumbnailFormat', 'webp'); // WebP形式でサムネイル生成
-      formData.append('thumbnailQuality', '85'); // WebP品質設定
-      formData.append('thumbnailSize', '1280x720'); // サムネイルサイズ（1280x720）
-      formData.append('thumbnailWidth', '1280'); // サムネイル幅
-      formData.append('thumbnailHeight', '720'); // サムネイル高さ
-    }
-    
-    if (metadata) {
-      // サムネイル関連以外のメタデータを追加
-      const { generateThumbnail, thumbnailTimestamp, ...otherMetadata } = metadata;
-      if (Object.keys(otherMetadata).length > 0) {
-        formData.append('metadata', JSON.stringify(otherMetadata));
-      }
-    }
-
-    return formData;
-  }
 
   // ファイルアップロード + 変換（サムネイル生成付き）
   async uploadAndTranscode(
@@ -314,32 +272,57 @@ export class GPUTranscoderClient {
         formData.append('outputPath', outputPath);
       }
 
-      // サムネイル生成オプション
+      // サムネイル生成オプション（高品質設定）
       if (metadata?.generateThumbnail !== false) {
+        const thumbnailFormat = metadata?.thumbnailFormat || 'jpg'; // 確実にJPGを使用
+        console.log('🖼️ サムネイル形式設定:', thumbnailFormat);
+        
         formData.append('generateThumbnail', 'true');
-        formData.append('thumbnailTimestamp', (metadata?.thumbnailTimestamp || 5).toString());
-        formData.append('thumbnailFormat', 'webp');
-        formData.append('thumbnailQuality', '85');
-        formData.append('thumbnailSize', '1280x720');
-        formData.append('thumbnailWidth', '1280');
-        formData.append('thumbnailHeight', '720');
+        formData.append('thumbnailTimestamp', (metadata?.thumbnailTimestamp || 15).toString());
+        formData.append('thumbnailFormat', thumbnailFormat); // 明示的な形式指定
+        formData.append('thumbnailQuality', (metadata?.thumbnailQuality || 95).toString());
+        formData.append('thumbnailSize', metadata?.thumbnailSize || '1920x1080');
+        formData.append('thumbnailWidth', (metadata?.thumbnailWidth || 1920).toString());
+        formData.append('thumbnailHeight', (metadata?.thumbnailHeight || 1080).toString());
+        // 高品質スケーリングオプション追加
+        formData.append('thumbnailScaling', 'lanczos'); // 高品質スケーリングアルゴリズム
+        formData.append('thumbnailSharpening', 'true'); // シャープニング有効化
       }
       
       if (metadata) {
-        const { generateThumbnail, thumbnailTimestamp, ...otherMetadata } = metadata;
+        // サムネイル関連パラメータを除外してその他のメタデータのみ送信
+        const { 
+          generateThumbnail, 
+          thumbnailTimestamp, 
+          thumbnailFormat, 
+          thumbnailQuality, 
+          thumbnailSize, 
+          thumbnailWidth, 
+          thumbnailHeight, 
+          ...otherMetadata 
+        } = metadata;
+        
         if (Object.keys(otherMetadata).length > 0) {
           formData.append('metadata', JSON.stringify(otherMetadata));
         }
       }
 
       console.log('🔍 GPU server URL:', this.baseURL);
-      console.log('📦 FormData contents:', {
+      // FormDataの内容をデバッグ出力
+      const debugInfo = {
         preset: preset,
         outputPath: outputPath,
-        generateThumbnail: metadata?.generateThumbnail || false,
-        thumbnailTimestamp: metadata?.thumbnailTimestamp || 5,
+        generateThumbnail: metadata?.generateThumbnail !== false,
+        thumbnailTimestamp: metadata?.thumbnailTimestamp || 15,
+        thumbnailFormat: metadata?.thumbnailFormat || 'jpg',
+        thumbnailQuality: metadata?.thumbnailQuality || 95,
         hasFile: !!file
-      });
+      };
+      
+      console.log('📦 FormData contents:', debugInfo);
+      console.log('🔍 実際のFormDataフィールド:');
+      console.log('  - thumbnailFormat:', metadata?.thumbnailFormat || 'jpg');
+      console.log('  - generateThumbnail:', metadata?.generateThumbnail !== false ? 'true' : 'false');
 
       const response = await this.client.post('/upload-and-transcode', formData, {
         headers: {
@@ -788,7 +771,7 @@ export class GPUTranscoderClient {
     options: {
       timestamp?: number;
       size?: string;
-      format?: string;
+      format?: 'jpg' | 'webp';
       quality?: number;
     } = {}
   ): Promise<{
@@ -809,10 +792,10 @@ export class GPUTranscoderClient {
       const response = await this.client.post('/generate-thumbnail', {
         inputFile,
         outputPath,
-        timestamp: options.timestamp || 5,
+        timestamp: options.timestamp || 15,
         size: options.size || '1280x720',
         format: options.format || 'webp',
-        quality: options.quality || 85
+        quality: options.quality || 95
       });
 
       console.log('GPU thumbnail generation response:', {
@@ -826,6 +809,46 @@ export class GPUTranscoderClient {
     }
   }
 
+  // 既存サムネイルの形式変換
+  async convertThumbnail(
+    inputPath: string,
+    outputPath: string,
+    targetFormat: 'jpg' | 'webp',
+    quality?: number
+  ): Promise<{
+    success: boolean;
+    outputPath: string;
+    inputSizeMB: number;
+    outputSizeMB: number;
+    format: string;
+    message: string;
+  }> {
+    try {
+      console.log('GPU thumbnail conversion request:', {
+        inputPath,
+        outputPath,
+        targetFormat,
+        quality
+      });
+
+      const response = await this.client.post('/thumbnail/convert', {
+        inputPath,
+        outputPath,
+        targetFormat,
+        quality: quality || 95
+      });
+
+      console.log('GPU thumbnail conversion response:', {
+        status: response.status,
+        data: response.data
+      });
+
+      return response.data;
+    } catch (error: any) {
+      this.handleError(error, 'thumbnail conversion');
+    }
+  }
+
   // 変換完了後のサムネイル生成（GPUサーバーAPI使用）
   async generateThumbnailAfterTranscode(
     videoId: string,
@@ -833,7 +856,7 @@ export class GPUTranscoderClient {
     options: {
       timestamp?: number;
       size?: string;
-      format?: string;
+      format?: 'jpg' | 'webp';
       quality?: number;
     } = {}
   ): Promise<{
@@ -843,8 +866,24 @@ export class GPUTranscoderClient {
     thumbnailSizeMB: number;
   }> {
     try {
-      // サムネイルファイル名を生成
-      const thumbnailFileName = `${videoId}_thumb_${Date.now()}.${options.format || 'webp'}`;
+      // システム設定からサムネイル設定を取得
+      let thumbnailConfig: { format: 'jpg' | 'webp'; quality: number } | null = null;
+      try {
+        // Node.js環境でのみconfigServiceを使用
+        if (typeof window === 'undefined') {
+          const { configService } = await import('@/lib/config-service');
+          if (configService) {
+            thumbnailConfig = await configService.getThumbnailConfig();
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to get thumbnail config:', error);
+      }
+
+      // サムネイルファイル名を生成（固定URL維持）
+      const format = options.format || thumbnailConfig?.format || 'jpg';
+      const quality = options.quality || thumbnailConfig?.quality || 95;
+      const thumbnailFileName = `${videoId}_thumb.${format}`; // タイムスタンプを削除して固定URL
       const thumbnailPath = `/mnt/nas/videos/thumbnails/${thumbnailFileName}`;
       
       // GPUサーバーが理解できるパスに変換
@@ -857,12 +896,17 @@ export class GPUTranscoderClient {
         originalFilePath,
         gpuInputFile,
         thumbnailPath,
-        options
+        options,
+        systemConfig: { format, quality }
       });
 
       // GPUサーバーのサムネイル生成APIを呼び出し
       console.log('Calling GPU server thumbnail generation API...');
-      const result = await this.generateThumbnail(gpuInputFile, thumbnailPath, options);
+      const result = await this.generateThumbnail(gpuInputFile, thumbnailPath, {
+        ...options,
+        format: format,
+        quality: quality
+      });
       console.log('GPU server thumbnail generation result:', result);
 
       if (result.success) {

@@ -5,6 +5,7 @@ import { generateThumbnailFromVideo } from '@/lib/upload-utils';
 import { processThumbnail, generateImageFileName, deleteImageFile } from '@/lib/image-utils';
 import { storageService } from '@/lib/storage-service';
 import { gpuTranscoderClient } from '@/lib/gpu-transcoder';
+import { configService } from '@/lib/config-service';
 import path from 'path';
 import fs from 'fs';
 
@@ -115,7 +116,7 @@ export async function POST(
     let thumbnailFileName: string;
     let thumbnailPath: string;
     
-    if (existingThumbnailUrl?.thumbnailUrl && existingThumbnailUrl.thumbnailUrl.startsWith('/videos/thumbnails/')) {
+    if (existingThumbnailUrl?.thumbnailUrl) {
       // 既存のファイル名を再利用
       thumbnailFileName = path.basename(existingThumbnailUrl.thumbnailUrl);
       thumbnailPath = `/mnt/nas/videos/thumbnails/${thumbnailFileName}`;
@@ -133,12 +134,16 @@ export async function POST(
       }
     } else {
       // 新しいファイル名を生成
-      thumbnailFileName = generateImageFileName(`${videoId}_generated`, video.title);
+      thumbnailFileName = generateImageFileName(`${videoId}_converted_thumb`, video.title);
       thumbnailPath = `/mnt/nas/videos/thumbnails/${thumbnailFileName}`;
       console.log('新しいファイル名を生成:', thumbnailFileName);
     }
     
     try {
+      // システム設定からサムネイル設定を取得
+      const thumbnailConfig = await configService?.getThumbnailConfig();
+      console.log('🖼️ サムネイル設定:', thumbnailConfig);
+
       // GPU変換サーバー用のパスに変換
       const nasMountPath = process.env.NAS_VIDEOS_PATH || '/Volumes/videos';
       const gpuMountPath = process.env.GPU_NAS_VIDEOS_PATH || '/mnt/nas/videos';
@@ -147,6 +152,15 @@ export async function POST(
         originalPath: videoFilePath,
         gpuPath: gpuInputPath
       });
+
+      // 設定に応じてファイル名を調整
+      const configFormat = thumbnailConfig?.format || 'jpg';
+      if (!thumbnailFileName.endsWith(`.${configFormat}`)) {
+        // ファイル名の拡張子を設定に合わせて変更
+        const nameWithoutExt = thumbnailFileName.replace(/\.[^/.]+$/, '');
+        thumbnailFileName = `${nameWithoutExt}.${configFormat}`;
+        thumbnailPath = `/mnt/nas/videos/thumbnails/${thumbnailFileName}`;
+      }
 
       // GPU変換サーバーにサムネイル生成リクエストを送信
       const response = await fetch(`${gpuTranscoderClient['baseURL']}/generate-thumbnail`, {
@@ -161,8 +175,8 @@ export async function POST(
           size: '1280x720',
           width: 1280,
           height: 720,
-          format: 'webp',
-          quality: 85
+          format: configFormat,
+          quality: thumbnailConfig?.quality || 95
         })
       });
 
@@ -199,16 +213,19 @@ export async function POST(
       // const stats = fs.statSync(localThumbnailPath);
       // const processResult = { ... };
       
-      // 既存のURLを再利用、または新しいURLを生成
-      const thumbnailUrl = existingThumbnailUrl?.thumbnailUrl || `/videos/thumbnails/${thumbnailFileName}`;
+      // サムネイルURLを生成（既存がある場合は既存のパス形式を維持、ない場合は新規作成）
+      const thumbnailUrl = existingThumbnailUrl?.thumbnailUrl 
+        ? `/videos/thumbnails/${thumbnailFileName}` 
+        : `/videos/thumbnails/${thumbnailFileName}`;
 
-      // 新しいファイル名が生成された場合のみデータベースを更新
-      if (!existingThumbnailUrl?.thumbnailUrl) {
+      // ファイル名が変更された場合（拡張子変更など）またはURLが存在しない場合はデータベースを更新
+      const currentBaseName = existingThumbnailUrl?.thumbnailUrl ? path.basename(existingThumbnailUrl.thumbnailUrl) : null;
+      if (!existingThumbnailUrl?.thumbnailUrl || currentBaseName !== thumbnailFileName) {
         await prisma.video.update({
           where: { videoId },
           data: { thumbnailUrl }
         });
-        console.log('新しいサムネイルURLをデータベースに保存:', thumbnailUrl);
+        console.log('サムネイルURLをデータベースに保存:', thumbnailUrl);
       } else {
         console.log('既存のサムネイルURLを維持:', thumbnailUrl);
       }
@@ -220,7 +237,7 @@ export async function POST(
           fileName: thumbnailFileName,
           // fileSize: processResult.fileSize, // 省略
           // dimensions: `${processResult.width}x${processResult.height}`, // 省略
-          format: 'webp',
+          format: thumbnailConfig?.format || 'jpg',
           timestamp
         }
       });

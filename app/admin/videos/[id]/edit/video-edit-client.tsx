@@ -143,9 +143,35 @@ export default function VideoEditClient({ id }: { id: string }) {
   const fetchVideo = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/videos/${id}`);
+      console.log('Fetching video with ID:', id);
+      const response = await fetch(`/api/admin/videos/${id}`, {
+        credentials: 'include'
+      });
       if (!response.ok) {
-        throw new Error('動画の取得に失敗しました');
+        console.error(`API Error: ${response.status} ${response.statusText}`);
+        console.error('Response URL:', response.url);
+        console.error('Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        let errorData = {};
+        try {
+          const responseText = await response.text();
+          console.error('Raw response:', responseText);
+          if (responseText) {
+            errorData = JSON.parse(responseText);
+          }
+        } catch (parseError) {
+          console.error('Failed to parse response as JSON:', parseError);
+        }
+        
+        console.error('Parsed error data:', errorData);
+        
+        if (response.status === 404 && errorData && typeof errorData === 'object' && 'debug' in errorData) {
+          console.log('Debug info:', (errorData as any).debug);
+          const debug = (errorData as any).debug;
+          throw new Error(`動画が見つかりません (ID: ${id}). 利用可能な動画: ${debug?.availableVideos?.join(', ') || 'なし'}`);
+        }
+        
+        throw new Error(`動画の取得に失敗しました: ${(errorData && typeof errorData === 'object' && 'error' in errorData) ? (errorData as any).error : response.statusText}`);
       }
 
       const data = await response.json();
@@ -177,7 +203,9 @@ export default function VideoEditClient({ id }: { id: string }) {
       if (data.video.uploadType === 'FILE' && data.video.transcodeJobId) {
         console.log('TranscodeJobId found:', data.video.transcodeJobId);
         try {
-          const transcodeResponse = await fetch(`/api/transcode/job/${data.video.transcodeJobId}`);
+          const transcodeResponse = await fetch(`/api/transcode/job/${data.video.transcodeJobId}`, {
+            credentials: 'include'
+          });
           console.log('Transcode response status:', transcodeResponse.status);
           if (transcodeResponse.ok) {
             const transcodeData = await transcodeResponse.json();
@@ -218,8 +246,8 @@ export default function VideoEditClient({ id }: { id: string }) {
   const fetchCategoriesAndTags = async () => {
     try {
       const [categoriesRes, tagsRes] = await Promise.all([
-        fetch('/api/categories'),
-        fetch('/api/tags')
+        fetch('/api/categories', { credentials: 'include' }),
+        fetch('/api/tags', { credentials: 'include' })
       ]);
 
       if (categoriesRes.ok) {
@@ -293,6 +321,21 @@ export default function VideoEditClient({ id }: { id: string }) {
     setThumbnailUpdateKey(prev => prev + 1);
   };
 
+  // サムネイル削除時のハンドラー
+  const handleThumbnailDeleted = () => {
+    if (video) {
+      setVideo({
+        ...video,
+        thumbnailUrl: ''
+      });
+    }
+    setThumbnailFile(null);
+    // 強制的に再レンダリングを促す
+    setThumbnailUpdateKey(prev => prev + 1);
+    // 成功メッセージを表示
+    toast.success('サムネイルを削除しました');
+  };
+
   // 新しいタグ作成
   const handleCreateTag = async () => {
     if (!newTagName.trim()) {
@@ -306,6 +349,7 @@ export default function VideoEditClient({ id }: { id: string }) {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ 
           name: newTagName.trim(),
           slug: newTagName.trim().toLowerCase().replace(/\s+/g, '-')
@@ -348,6 +392,7 @@ export default function VideoEditClient({ id }: { id: string }) {
 
       const videoResponse = await fetch(`/api/admin/videos/${id}`, {
         method: 'PUT',
+        credentials: 'include',
         body: formData,
       });
 
@@ -389,6 +434,7 @@ export default function VideoEditClient({ id }: { id: string }) {
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
           body: JSON.stringify(postUpdateData),
         });
 
@@ -520,8 +566,9 @@ export default function VideoEditClient({ id }: { id: string }) {
                 onThumbnailSelect={handleThumbnailUploadGenerated}
                 uploadMethod={video.uploadType === 'YOUTUBE' ? 'youtube' : 'file'}
                 optimizationInfo={optimizationInfo || undefined}
-                videoId={video.uploadType === 'FILE' ? video.videoId : undefined}
+                videoId={video.videoId}
                 currentThumbnailUrl={video.thumbnailUrl}
+                onThumbnailDeleted={handleThumbnailDeleted}
               />
               {thumbnailFile && (
                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">

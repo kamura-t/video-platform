@@ -246,7 +246,7 @@ export class ConfigService {
         groups.upload.push(setting);
       } else if (setting.key.includes('nas_') || setting.key.includes('storage')) {
         groups.storage.push(setting);
-      } else if (setting.key.includes('gpu_') || setting.key.includes('transcoding')) {
+      } else if (setting.key.includes('gpu_') || setting.key.includes('transcoding') || setting.key.includes('thumbnail_')) {
         groups.gpu.push(setting);
       } else if (setting.key.includes('session') || setting.key.includes('password') || setting.key.includes('security')) {
         groups.security.push(setting);
@@ -350,6 +350,16 @@ export class ConfigService {
     };
   }
 
+  async getThumbnailConfig() {
+    if (!isServer) {
+      throw new Error('ConfigService can only be used on the server side');
+    }
+    return {
+      format: await this.getString('thumbnail_format', 'jpg') as 'jpg' | 'webp',
+      quality: await this.getNumber('thumbnail_quality', 95)
+    };
+  }
+
   // 初期設定をセットアップ
   async setupDefaultSettings(): Promise<void> {
     if (!isServer) {
@@ -372,7 +382,9 @@ export class ConfigService {
       { key: 'new_badge_display_days', value: '7', type: 'INTEGER' as SettingType, description: '新着バッジ表示日数' },
       { key: 'private_video_allowed_ips', value: '[]', type: 'JSON' as SettingType, description: '学内限定動画にアクセス可能なIPアドレス（JSON配列）' },
       { key: 'youtube_api_key', value: '', type: 'STRING' as SettingType, description: 'YouTube Data API v3 キー' },
-      { key: 'view_history_retention_days', value: '1825', type: 'INTEGER' as SettingType, description: '視聴履歴の保持期間（日数）' }
+      { key: 'view_history_retention_days', value: '1825', type: 'INTEGER' as SettingType, description: '視聴履歴の保持期間（日数）' },
+      { key: 'thumbnail_format', value: 'jpg', type: 'STRING' as SettingType, description: 'サムネイル生成形式（jpg または webp）' },
+      { key: 'thumbnail_quality', value: '95', type: 'INTEGER' as SettingType, description: 'サムネイル生成品質（1-100）' }
     ];
 
     for (const setting of defaultSettings) {

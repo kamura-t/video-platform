@@ -39,6 +39,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const logoImage = settings.site_logo_image;
 
   return {
+    metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'),
     title: `${siteTitle} - 組織向けビデオ共有プラットフォーム`,
     description: '組織内でビデオコンテンツを安全に共有・管理するプラットフォーム',
     icons: logoImage ? {

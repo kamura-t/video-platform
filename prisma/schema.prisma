@@ -35,7 +35,11 @@ model User {
   playlists             Playlist[]
   favorites             Favorite[]
   viewHistory           ViewHistory[]
+  dailyViewHistory      DailyViewHistory[]
   notifications         Notification[]
+  analyticsData         AnalyticsData[]
+  userEngagement        UserEngagement[]
+  searchAnalytics       SearchAnalytics[]
 
   @@index([username])
   @@index([email])
@@ -108,6 +112,10 @@ model Video {
   transcodeJobs         TranscodeJob[]
   favorites             Favorite[]
   viewHistory           ViewHistory[]
+  dailyViewHistory      DailyViewHistory[]
+  analyticsData         AnalyticsData[]
+  videoAnalytics        VideoAnalytics[]
+  searchAnalytics       SearchAnalytics[]
 
   @@index([videoId])
   @@index([uploaderId])
@@ -219,6 +227,8 @@ model Category {
 
   // Relations
   videos                VideoCategory[]
+  analyticsData         AnalyticsData[]
+  categoryAnalytics     CategoryAnalytics[]
 
   @@index([slug])
   @@index([sortOrder])
@@ -303,6 +313,7 @@ model Favorite {
   @@map("favorites")
 }
 
+// 既存の視聴履歴サマリー（最新の視聴状況・レコメンド用）
 model ViewHistory {
   id                    Int       @id @default(autoincrement())
   userId                Int       @map("user_id")
@@ -318,6 +329,40 @@ model ViewHistory {
   @@index([videoId])
   @@index([lastWatchedAt])
   @@map("view_history")
+}
+
+// 日付単位の詳細視聴履歴（YouTube風）
+model DailyViewHistory {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId               Int       @map("video_id")
+  video                 Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  // 日付情報
+  viewDate              DateTime  @map("view_date") @db.Date
+  viewTime              DateTime  @map("view_time") @db.Timestamptz
+  
+  // 視聴情報
+  watchDuration         Int?      @map("watch_duration") // seconds
+  completionRate        Decimal?  @map("completion_rate") @db.Decimal(5, 2)
+  sessionCount          Int       @default(1) @map("session_count") // その日の視聴セッション数
+  
+  // メタデータ
+  deviceType            String?   @map("device_type") @db.VarChar(50)
+  referrer              String?   @db.VarChar(500)
+  userAgent             String?   @map("user_agent") @db.Text
+  
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([userId, videoId, viewDate])
+  @@index([userId])
+  @@index([videoId])
+  @@index([viewDate])
+  @@index([userId, viewDate]) // 日付別ユーザー履歴
+  @@index([viewTime]) // 時系列分析用
+  @@map("daily_view_history")
 }
 
 model SystemSetting {
@@ -384,9 +429,9 @@ enum UploadType {
 }
 
 enum Visibility {
-  PUBLIC  @map("public")
-  PRIVATE @map("private")
-  DRAFT   @map("draft")
+  PUBLIC     @map("public")
+  PRIVATE    @map("private")
+  DRAFT      @map("draft")
 }
 
 enum VideoStatus {
@@ -439,4 +484,182 @@ model Notification {
   @@index([isRead])
   @@index([createdAt])
   @@map("notifications")
+}
+
+// Advanced Analytics Models
+
+model AnalyticsData {
+  id              Int      @id @default(autoincrement())
+  dataType        AnalyticsDataType @map("data_type")
+  aggregationLevel AnalyticsAggregationLevel @map("aggregation_level")
+  
+  // 時間系列情報
+  dateFrom        DateTime @map("date_from") @db.Date
+  dateTo          DateTime @map("date_to") @db.Date
+  hourOfDay       Int?     @map("hour_of_day") // 0-23 for hourly aggregation
+  dayOfWeek       Int?     @map("day_of_week") // 0-6 for weekly aggregation
+  
+  // 分析対象
+  videoId         Int?     @map("video_id")
+  video           Video?   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  categoryId      Int?     @map("category_id")
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId          Int?     @map("user_id")
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // 指標データ（JSON形式で格納）
+  metrics         String   @db.Text // JSON: views, watch_time, engagement, etc.
+  
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([dataType, aggregationLevel, dateFrom, dateTo, videoId, categoryId, userId, hourOfDay, dayOfWeek])
+  @@index([dataType])
+  @@index([aggregationLevel])
+  @@index([dateFrom, dateTo])
+  @@index([videoId])
+  @@index([categoryId])
+  @@index([userId])
+  @@index([hourOfDay])
+  @@index([dayOfWeek])
+  @@map("analytics_data")
+}
+
+model UserEngagement {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @map("user_id")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // 日次エンゲージメント指標
+  date              DateTime @db.Date
+  videosWatched     Int      @default(0) @map("videos_watched")
+  totalWatchTime    Int      @default(0) @map("total_watch_time") // seconds
+  uniqueVideos      Int      @default(0) @map("unique_videos")
+  avgWatchDuration  Int      @default(0) @map("avg_watch_duration") // seconds
+  favoritesAdded    Int      @default(0) @map("favorites_added")
+  playlistsCreated  Int      @default(0) @map("playlists_created")
+  
+  // セッション情報
+  sessionCount      Int      @default(0) @map("session_count")
+  avgSessionDuration Int     @default(0) @map("avg_session_duration") // seconds
+  
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@index([videosWatched])
+  @@index([totalWatchTime])
+  @@map("user_engagement")
+}
+
+model VideoAnalytics {
+  id                Int      @id @default(autoincrement())
+  videoId           Int      @map("video_id")
+  video             Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  // 日次動画分析指標
+  date              DateTime @db.Date
+  views             Int      @default(0)
+  uniqueViewers     Int      @default(0) @map("unique_viewers")
+  totalWatchTime    Int      @default(0) @map("total_watch_time") // seconds
+  avgWatchDuration  Int      @default(0) @map("avg_watch_duration") // seconds
+  avgCompletionRate Decimal  @default(0) @map("avg_completion_rate") @db.Decimal(5, 2)
+  
+  // エンゲージメント指標
+  favoritesCount    Int      @default(0) @map("favorites_count")
+  playlistAdds      Int      @default(0) @map("playlist_adds")
+  
+  // 流入源分析
+  directViews       Int      @default(0) @map("direct_views")
+  searchViews       Int      @default(0) @map("search_views")
+  recommendedViews  Int      @default(0) @map("recommended_views")
+  playlistViews     Int      @default(0) @map("playlist_views")
+  
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([videoId, date])
+  @@index([videoId])
+  @@index([date])
+  @@index([views])
+  @@index([avgCompletionRate])
+  @@map("video_analytics")
+}
+
+model CategoryAnalytics {
+  id                Int      @id @default(autoincrement())
+  categoryId        Int      @map("category_id")
+  category          Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  // 日次カテゴリ分析指標
+  date              DateTime @db.Date
+  totalViews        Int      @default(0) @map("total_views")
+  uniqueViewers     Int      @default(0) @map("unique_viewers")
+  totalWatchTime    Int      @default(0) @map("total_watch_time") // seconds
+  activeVideos      Int      @default(0) @map("active_videos") // 視聴された動画数
+  newVideos         Int      @default(0) @map("new_videos") // 新規追加動画数
+  
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([categoryId, date])
+  @@index([categoryId])
+  @@index([date])
+  @@index([totalViews])
+  @@map("category_analytics")
+}
+
+model SearchAnalytics {
+  id                Int      @id @default(autoincrement())
+  
+  // 検索情報
+  searchQuery       String   @map("search_query") @db.VarChar(500)
+  searchType        SearchType @map("search_type")
+  resultCount       Int      @map("result_count")
+  
+  // ユーザー情報（任意）
+  userId            Int?     @map("user_id")
+  user              User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId         String?  @map("session_id") @db.VarChar(64)
+  
+  // クリック情報
+  clickedVideoId    Int?     @map("clicked_video_id")
+  clickedVideo      Video?   @relation(fields: [clickedVideoId], references: [id], onDelete: Cascade)
+  clickPosition     Int?     @map("click_position") // 検索結果での位置
+  
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([searchQuery])
+  @@index([searchType])
+  @@index([userId])
+  @@index([sessionId])
+  @@index([clickedVideoId])
+  @@index([createdAt])
+  @@map("search_analytics")
+}
+
+
+// Analytics Enums
+enum AnalyticsDataType {
+  VIDEO_VIEWS @map("video_views")
+  USER_ENGAGEMENT @map("user_engagement")
+  CATEGORY_PERFORMANCE @map("category_performance")
+  SEARCH_TRENDS @map("search_trends")
+  TRAFFIC_SOURCES @map("traffic_sources")
+}
+
+enum AnalyticsAggregationLevel {
+  HOURLY @map("hourly")
+  DAILY @map("daily")
+  WEEKLY @map("weekly")
+  MONTHLY @map("monthly")
+}
+
+enum SearchType {
+  VIDEO_SEARCH @map("video_search")
+  CATEGORY_FILTER @map("category_filter")
+  TAG_FILTER @map("tag_filter")
+  ADVANCED_FILTER @map("advanced_filter")
 } 

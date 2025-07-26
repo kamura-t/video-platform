@@ -42,14 +42,25 @@ export function RecommendationSection({ currentVideoId, className }: Recommendat
   useEffect(() => {
     const fetchRecommendedVideos = async () => {
       try {
-        const response = await fetch('/api/videos?limit=10&random=true')
+        // より多くの動画を取得してランダム性を向上
+        const timestamp = Date.now()
+        const response = await fetch(`/api/videos?limit=20&random=true&t=${timestamp}`)
         const result = await response.json()
         
         if (result.success) {
           // 現在の動画を除外
-          const filteredVideos = result.data.videos.filter((video: RecommendedVideo) => 
+          let filteredVideos = result.data.videos.filter((video: RecommendedVideo) => 
             video.id !== currentVideoId
-          ).slice(0, 8) // 最大8本表示
+          )
+          
+          // クライアント側でも追加のシャッフル
+          for (let i = filteredVideos.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [filteredVideos[i], filteredVideos[j]] = [filteredVideos[j], filteredVideos[i]];
+          }
+          
+          // 最大8本表示
+          filteredVideos = filteredVideos.slice(0, 8)
           
           setVideos(filteredVideos)
         }

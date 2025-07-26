@@ -139,7 +139,7 @@ export interface UploadFormData {
   description: string;
   categories: string[];
   tags?: string[];
-  visibility: 'PUBLIC' | 'PRIVATE' | 'RESTRICTED';
+  visibility: 'PUBLIC' | 'PRIVATE' | 'DRAFT';
   youtubeUrl?: string;
   file?: File;
   preset: string;

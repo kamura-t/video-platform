@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { Visibility } from '@prisma/client';
 import { storageService } from '@/lib/storage-service';
 import { validationService } from '@/lib/validation-service';
 import { gpuTranscoderClient } from '@/lib/gpu-transcoder';
 import { authenticateApiRequest } from '@/lib/auth';
 import { correctMimeType, extractYouTubeVideoId } from '@/lib/upload-utils';
+import { configService } from '@/lib/config-service';
 import fs from 'fs';
 
 // 共通バリデーション関数
@@ -192,7 +194,7 @@ async function createVideoRecord(data: {
       fileSize: uploadMethod === 'file' ? BigInt(uploadedFile?.size || 0) : null,
       mimeType: uploadMethod === 'file' ? uploadedFile?.mimeType : null,
       uploaderId: parseInt(userId),
-      visibility: visibility as 'PUBLIC' | 'PRIVATE',
+      visibility: visibility as Visibility,
       status: 'COMPLETED',
       isScheduled: scheduleType === 'scheduled',
       scheduledPublishAt: scheduleType === 'scheduled' && scheduledPublishAt ? new Date(scheduledPublishAt) : null,
@@ -219,7 +221,7 @@ async function createPostRecord(video: any, data: {
       description: data.description,
       postType: 'VIDEO',
       videoId: video.id,
-      visibility: data.visibility as 'PUBLIC' | 'PRIVATE',
+      visibility: data.visibility as Visibility,
       creatorId: parseInt(data.userId),
       isScheduled: data.scheduleType === 'scheduled',
       scheduledPublishAt: data.scheduleType === 'scheduled' && data.scheduledPublishAt ? new Date(data.scheduledPublishAt) : null,
@@ -545,6 +547,10 @@ export async function POST(request: NextRequest) {
           const fileBuffer = fs.readFileSync(uploadedFile.absolutePath);
           console.log('📦 ファイルバッファ読み込み完了:', fileBuffer.length, 'bytes');
           
+          // システム設定からサムネイル設定を取得
+          const thumbnailConfig = await configService?.getThumbnailConfig();
+          console.log('🖼️ サムネイル設定:', thumbnailConfig);
+
           console.log('🚀 GPU変換サーバーにリクエスト送信:', {
             preset: preset,
             outputPath,
@@ -553,7 +559,9 @@ export async function POST(request: NextRequest) {
               videoId: videoId,
               originalFilename: uploadedFile.originalName,
               generateThumbnail: true, // サムネイル生成を有効化
-              thumbnailTimestamp: 5
+              thumbnailTimestamp: 15, // 動画開始から15秒後（より安定したシーン）
+              thumbnailFormat: thumbnailConfig?.format || 'jpg',
+              thumbnailQuality: thumbnailConfig?.quality || 95
             }
           });
           
@@ -564,7 +572,9 @@ export async function POST(request: NextRequest) {
             preset: preset,
             outputPath: outputPath,
             originalFilename: uploadedFile.originalName,
-            mimeType: uploadedFile.mimeType
+            mimeType: uploadedFile.mimeType,
+            thumbnailFormat: thumbnailConfig?.format || 'jpg',
+            thumbnailQuality: thumbnailConfig?.quality || 95
           });
           
           const transcodeResult = await gpuTranscoderClient.uploadAndTranscode(
@@ -576,7 +586,9 @@ export async function POST(request: NextRequest) {
               videoId: videoId,
               originalFilename: uploadedFile.originalName,
               generateThumbnail: true, // サムネイル生成を有効化
-              thumbnailTimestamp: 5
+              thumbnailTimestamp: 15, // 動画開始から15秒後（より安定したシーン）
+              thumbnailFormat: thumbnailConfig?.format || 'jpg',
+              thumbnailQuality: thumbnailConfig?.quality || 95
             }
           );
           

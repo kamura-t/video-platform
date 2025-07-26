@@ -41,7 +41,7 @@ const uploadSchema = z.object({
   description: z.string().min(1, '説明は必須です').max(1000, '説明は1000文字以内で入力してください'),
   categories: z.array(z.string()).min(1, 'カテゴリを選択してください'),
   tags: z.array(z.string()).optional(),
-  visibility: z.enum(['PUBLIC', 'PRIVATE', 'RESTRICTED']),
+  visibility: z.enum(['PUBLIC', 'PRIVATE', 'DRAFT']),
   youtubeUrl: z.string().optional(),
   file: z.any().optional(),
   preset: z.string().default('auto'),
@@ -660,32 +660,6 @@ export const VideoUploadForm: React.FC<VideoUploadFormProps> = ({
                       <div className="flex items-center space-x-2">
                         <input
                           type="radio"
-                          id="restricted"
-                          value="RESTRICTED"
-                          checked={field.value === 'RESTRICTED'}
-                          onChange={(e) => field.onChange(e.target.value)}
-                          disabled={isUploading}
-                          className="sr-only"
-                        />
-                        <label
-                          htmlFor="restricted"
-                          className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all w-full ${
-                            field.value === 'RESTRICTED'
-                              ? 'border-orange-500 bg-orange-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <EyeOff className="w-4 h-4" />
-                          <div>
-                            <div className="font-medium">学内LAN限定</div>
-                            <div className="text-sm text-gray-500">学内LANから視聴可能</div>
-                          </div>
-                        </label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="radio"
                           id="private"
                           value="PRIVATE"
                           checked={field.value === 'PRIVATE'}
@@ -697,6 +671,32 @@ export const VideoUploadForm: React.FC<VideoUploadFormProps> = ({
                           htmlFor="private"
                           className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all w-full ${
                             field.value === 'PRIVATE'
+                              ? 'border-orange-500 bg-orange-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <EyeOff className="w-4 h-4" />
+                          <div>
+                            <div className="font-medium">学内者限定</div>
+                            <div className="text-sm text-gray-500">学内者のみ視聴可能</div>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="draft"
+                          value="DRAFT"
+                          checked={field.value === 'DRAFT'}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          disabled={isUploading}
+                          className="sr-only"
+                        />
+                        <label
+                          htmlFor="draft"
+                          className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all w-full ${
+                            field.value === 'DRAFT'
                               ? 'border-red-500 bg-red-50'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}

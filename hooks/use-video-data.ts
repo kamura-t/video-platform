@@ -43,7 +43,6 @@ export function useVideoData(filters: VideoFilters) {
         apiUrl.searchParams.set('sort', filters.sortBy);
         
         const apiUrlString = apiUrl.toString();
-        console.log('VideoData: Fetching videos with URL:', apiUrlString);
         
         // 前回と同じAPIコールの場合はスキップ（並び順の変更時は除外）
         if (lastApiCall === apiUrlString && !apiUrlString.includes('sort=')) {
@@ -99,7 +98,6 @@ export function useVideoData(filters: VideoFilters) {
             }));
             
             setAllVideos(mappedVideos);
-            console.log('VideoData: Videos loaded successfully:', mappedVideos.length);
           } else {
             console.error('VideoData: API returned success: false or no videos');
             setAllVideos([]);

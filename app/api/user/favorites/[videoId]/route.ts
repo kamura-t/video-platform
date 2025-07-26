@@ -5,7 +5,7 @@ import { createSuccessResponse, createErrorResponse } from '@/lib/api-response';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { videoId: string } }
+  { params }: { params: Promise<{ videoId: string }> }
 ) {
   try {
     const authResult = await authenticateApiRequest(request, ['ADMIN', 'CURATOR', 'VIEWER']);
@@ -15,7 +15,8 @@ export async function DELETE(
     const currentUser = authResult.user!;
     const userId = parseInt(currentUser.userId);
 
-    const videoId = parseInt(params.videoId);
+    const resolvedParams = await params;
+    const videoId = parseInt(resolvedParams.videoId);
 
     if (isNaN(videoId)) {
       return createErrorResponse('無効な動画IDです', 400);

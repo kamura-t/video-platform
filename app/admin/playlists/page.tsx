@@ -47,6 +47,7 @@ import {
   PlaySquare
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
+import { MainLayout } from '@/components/layout/main-layout'
 
 interface Playlist {
   id: string
@@ -182,19 +183,20 @@ export default function PlaylistsPage() {
 
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">プレイリスト管理</h1>
-          <p className="text-muted-foreground">
-            プレイリストの作成・編集・削除を行います
-          </p>
+    <MainLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">プレイリスト管理</h1>
+            <p className="text-muted-foreground">
+              プレイリストの作成・編集・削除を行います
+            </p>
+          </div>
+          <Button onClick={() => router.push('/playlists/create')}>
+            <Plus className="h-4 w-4 mr-2" />
+            プレイリスト作成
+          </Button>
         </div>
-        <Button onClick={() => router.push('/playlists/create')}>
-          <Plus className="h-4 w-4 mr-2" />
-          プレイリスト作成
-        </Button>
-      </div>
 
       {/* フィルター */}
       <Card>
@@ -409,6 +411,7 @@ export default function PlaylistsPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </MainLayout>
   )
 } 

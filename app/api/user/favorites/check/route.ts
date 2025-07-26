@@ -15,8 +15,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { videoIds } = body;
 
-    console.log('Favorites check request body:', body);
-    console.log('videoIds:', videoIds);
 
     if (!Array.isArray(videoIds) || videoIds.length === 0) {
       return createErrorResponse('動画IDの配列が必要です', 400);
@@ -27,7 +25,6 @@ export async function POST(request: NextRequest) {
       .filter(id => id != null && !isNaN(parseInt(id)))
       .map(id => parseInt(id));
 
-    console.log('Valid videoIds:', validVideoIds);
 
     if (validVideoIds.length === 0) {
       return createErrorResponse('有効な動画IDが含まれていません', 400);

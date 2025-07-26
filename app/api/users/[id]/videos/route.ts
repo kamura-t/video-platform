@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { checkPrivateVideoAccess } from '@/lib/ip-access-control';
+import { checkInternalVideoAccess } from '@/lib/auth-access-control';
 
 export async function GET(
   request: NextRequest,
@@ -53,8 +53,8 @@ export async function GET(
       );
     }
 
-    // プライベート動画のアクセス権限をチェック
-    const hasPrivateAccess = await checkPrivateVideoAccess(request);
+    // 学内限定動画のアクセス権限をチェック
+    const hasInternalAccess = await checkInternalVideoAccess(request);
 
     // 基本クエリ条件
     const baseWhere: any = {
@@ -62,8 +62,8 @@ export async function GET(
       status: 'COMPLETED',
     };
 
-    // プライベート動画のアクセス制御
-    if (!hasPrivateAccess) {
+    // 学内限定動画のアクセス制御
+    if (!hasInternalAccess) {
       baseWhere.visibility = 'PUBLIC';
     }
 
