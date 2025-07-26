@@ -113,8 +113,17 @@ git clone https://github.com/your-org/gva-video-platform.git .
 npm ci --production #依存回避の場合 npm ci --production --legacy-peer-deps
 
 # Next.js用TypeScript設定
-npm install -g typescript
+# グローバルインストールではなく、プロジェクトローカルでTypeScriptを使用
+npm install typescript @types/node --save-dev
 npm run type-check
+
+# 注意: グローバルインストールが必要な場合は以下のコマンドを使用
+# sudo npm install -g typescript
+# または、npmのグローバルディレクトリを変更する方法:
+# mkdir ~/.npm-global
+# npm config set prefix '~/.npm-global'
+# echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+# source ~/.bashrc
 ```
 
 ### 7. 環境変数設定
@@ -760,6 +769,23 @@ du -sh /var/lib/video-platform/
 # 権限確認
 ls -la /var/lib/video-platform/
 sudo chown -R videoapp:videoapp /var/lib/video-platform/
+```
+
+#### 5. npm権限エラー
+```bash
+# EACCESエラーが発生した場合の対処法
+
+# 方法1: sudoを使用（推奨）
+sudo npm install -g typescript
+
+# 方法2: npmのグローバルディレクトリを変更
+mkdir ~/.npm-global
+npm config set prefix '~/.npm-global'
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# 方法3: プロジェクトローカルでインストール（推奨）
+npm install typescript @types/node --save-dev
 ```
 
 ## セットアップ完了チェックリスト
