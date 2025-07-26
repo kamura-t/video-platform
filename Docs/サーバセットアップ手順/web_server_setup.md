@@ -110,11 +110,13 @@ cd /var/www/video-platform
 git clone https://github.com/your-org/gva-video-platform.git .
 
 # 本番用依存関係インストール
-npm ci --production #依存回避の場合 npm ci --production --legacy-peer-deps
+# 注意: React 19を使用している場合、依存関係の競合が発生する可能性があります
+npm ci --production --legacy-peer-deps
 
 # Next.js用TypeScript設定
 # グローバルインストールではなく、プロジェクトローカルでTypeScriptを使用
-npm install typescript @types/node --save-dev
+# 依存関係の競合がある場合は --legacy-peer-deps フラグを使用
+npm install typescript @types/node --save-dev --legacy-peer-deps
 npm run type-check
 
 # 注意: グローバルインストールが必要な場合は以下のコマンドを使用
@@ -435,6 +437,28 @@ check_database() {
     fi
 }
 
+# Redis接続確認
+check_redis() {
+    if redis-cli -h 172.16.1.175 -p 6379 ping > /dev/null 2>&1; then
+        log "✅ Redis connection: OK"
+        return 0
+    else
+        log "❌ Redis connection: FAILED"
+        return 1
+    fi
+}
+
+# GPUサーバー接続確認
+check_gpu_server() {
+    if curl -f -s "http://172.16.1.172:3001/health" > /dev/null 2>&1; then
+        log "✅ GPU server connection: OK"
+        return 0
+    else
+        log "❌ GPU server connection: FAILED"
+        return 1
+    fi
+}
+
 # ディスク使用量確認
 check_disk_usage() {
     DISK_USAGE=$(df -h /var/lib/video-platform | tail -1 | awk '{print $5}' | sed 's/%//')
@@ -489,6 +513,16 @@ main() {
     
     if ! check_database; then
         send_alert "Database connection failed"
+        failed=1
+    fi
+    
+    if ! check_redis; then
+        send_alert "Redis connection failed"
+        failed=1
+    fi
+    
+    if ! check_gpu_server; then
+        send_alert "GPU server connection failed"
         failed=1
     fi
     
@@ -656,6 +690,19 @@ curl -I http://localhost:3000
 echo "=== Database Connection Test ==="
 curl -f http://localhost:3000/api/health/database
 
+# Redis接続テスト
+echo "=== Redis Connection Test ==="
+redis-cli -h 172.16.1.175 -p 6379 ping
+
+# GPUサーバー接続テスト
+echo "=== GPU Server Connection Test ==="
+curl -f http://172.16.1.172:3001/health
+
+# 外部サービス連携テスト
+echo "=== External Service Tests ==="
+curl -f http://localhost:3000/api/health
+curl -f http://localhost:3000/api/settings/public
+
 # ログ確認
 echo "=== Recent Logs ==="
 sudo tail -n 20 /var/log/pm2/gva-video-platform-combined.log
@@ -747,7 +794,33 @@ ping 172.16.1.174
 telnet 172.16.1.174 5432
 ```
 
-#### 3. メモリ不足
+#### 3. Redis接続エラー
+```bash
+# Redis接続テスト
+redis-cli -h 172.16.1.175 -p 6379 ping
+
+# ネットワーク確認
+ping 172.16.1.175
+telnet 172.16.1.175 6379
+
+# Redis認証確認（パスワードが設定されている場合）
+redis-cli -h 172.16.1.175 -p 6379 -a your_redis_password ping
+```
+
+#### 4. GPUサーバー接続エラー
+```bash
+# GPUサーバー接続テスト
+curl -f http://172.16.1.172:3001/health
+
+# ネットワーク確認
+ping 172.16.1.172
+telnet 172.16.1.172 3001
+
+# GPUサーバー状態確認
+curl -X GET http://172.16.1.172:3001/status
+```
+
+#### 5. メモリ不足
 ```bash
 # スワップファイル作成
 sudo fallocate -l 2G /swapfile
@@ -760,7 +833,7 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 # ecosystem.config.js の max_memory_restart を調整
 ```
 
-#### 4. ファイルアップロードエラー
+#### 6. ファイルアップロードエラー
 ```bash
 # ディスク容量確認
 df -h
@@ -771,7 +844,7 @@ ls -la /var/lib/video-platform/
 sudo chown -R videoapp:videoapp /var/lib/video-platform/
 ```
 
-#### 5. npm権限エラー
+#### 7. npm権限エラー
 ```bash
 # EACCESエラーが発生した場合の対処法
 
@@ -788,12 +861,34 @@ source ~/.bashrc
 npm install typescript @types/node --save-dev
 ```
 
+#### 8. 依存関係の競合エラー（ERESOLVE）
+```bash
+# React 19とnext-themes等の互換性問題が発生した場合
+
+# 方法1: --legacy-peer-depsフラグを使用（推奨）
+npm install typescript @types/node --save-dev --legacy-peer-deps
+
+# 方法2: --forceフラグを使用
+npm install typescript @types/node --save-dev --force
+
+# 方法3: 依存関係を個別にインストール
+npm install typescript --save-dev --legacy-peer-deps
+npm install @types/node --save-dev --legacy-peer-deps
+
+# 方法4: package.jsonの依存関係を確認・調整
+# React 19を使用している場合、next-themes等の古いライブラリを更新
+npm update next-themes --legacy-peer-deps
+```
+
 ## セットアップ完了チェックリスト
 
-- [ ] Node.js 20 LTSインストール完了
+- [ ] Node.js 22 LTSインストール完了
 - [ ] アプリケーション用ユーザー・ディレクトリ作成完了
+- [ ] FFmpeg・動画処理ツールインストール完了
 - [ ] 環境変数設定完了
 - [ ] データベース接続・初期化完了
+- [ ] Redis接続確認完了
+- [ ] GPUサーバー接続確認完了
 - [ ] 本番環境ビルド完了
 - [ ] PM2設定・起動完了
 - [ ] systemdサービス設定・有効化完了
@@ -803,11 +898,30 @@ npm install typescript @types/node --save-dev
 - [ ] セキュリティ設定（Fail2Ban）完了
 - [ ] アプリケーション動作テスト完了
 - [ ] 外部サービス連携テスト完了
+- [ ] NAS設定完了（オプション）
+- [ ] SSL/TLS証明書設定完了（オプション）
 
 ---
 
-**注意事項:**
+**重要注意事項:**
+
+### セキュリティ
 - セキュリティキーは例示です。本番環境では必ず新しいキーを生成してください
 - データベースパスワードは実際の設定値に合わせてください
+- 環境変数ファイル（.env.production）の権限は600に設定してください
+- 定期的にセキュリティアップデートを実施してください
+
+### パフォーマンス
+- メモリ使用量を監視し、必要に応じてスワップファイルを設定してください
+- ディスク容量を定期的に確認し、古いログファイルを削除してください
+- PM2のプロセス数をCPUコア数に合わせて調整してください
+
+### ネットワーク
+- ファイアウォール設定で必要なポートのみを開放してください
+- 外部サービス（Redis、GPUサーバー、データベース）への接続を定期的に確認してください
 - Load Balancerと組み合わせる場合は、直接的なHTTPS設定は不要です
-- 定期的な監視とメンテナンスを実施してください
+
+### 監視・メンテナンス
+- ヘルスチェックスクリプトが正常に動作することを確認してください
+- ログローテーションが適切に設定されていることを確認してください
+- 定期的なバックアップと復旧テストを実施してください
